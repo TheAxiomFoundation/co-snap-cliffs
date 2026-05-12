@@ -1,0 +1,35 @@
+{
+  "name": "co-snap-cliffs",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "engine:setup": "bash scripts/setup-engine.sh",
+    "engine:build": "bash scripts/build-artifacts.sh",
+    "engine:test": "tsx scripts/test-engine.ts",
+    "cliff:test": "tsx scripts/test-cliff.ts",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "^15.1.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "recharts": "^2.15.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "autoprefixer": "^10.4.20",
+    "js-yaml": "^4.1.0",
+    "@types/js-yaml": "^4.0.9",
+    "postcss": "^8.5.1",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.3"
+  }
+}

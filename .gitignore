@@ -6,11 +6,10 @@ out/
 .env.local
 .env*.local
 
-# Engine clones + build artifacts (bootstrapped by scripts/setup-engine.sh)
-engine/axiom-rules-engine/
-engine/rulespec-us/
-engine/rulespec-us-co/
-engine/artifacts/
+# Engine clones + build artifacts (bootstrapped by scripts/setup-engine.sh).
+# Whole `engine/` subtree is generated — checkouts, build outputs, compiled
+# artifacts, and the dev symlinks all live there.
+engine/
 
 # Python
 __pycache__/
