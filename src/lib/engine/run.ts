@@ -1,21 +1,23 @@
 /**
- * Engine adapter — TypeScript wrapper around the axiom-rules-engine Rust binary.
+ * Engine adapter — Vercel/local-dev wrapper around axiom-rules-engine.
  *
- * Two run modes:
- *   - `runCompiled(slug, request)` — runs the prebuilt artifact at
- *     `engine/artifacts/<slug>.compiled.json`. Used for the baseline (no
- *     parameter overrides) so we avoid the recompile cost.
- *   - `runWithProgram(programYamlPath, request)` — runs the full
- *     execute path with a freshly compiled (in-memory) program. Used when the
- *     caller has patched RuleSpec YAMLs to apply parameter overrides.
+ * Two transports for the same wire shape:
  *
- * Both transports fall back to local subprocess when AXIOM_ENGINE_URL is unset.
+ * 1. `AXIOM_ENGINE_URL` set (production / Vercel) → POST {program, request,
+ *    overrides?} to the Modal-hosted service. Modal handles both prebuilt
+ *    runs and override-driven patch+compile+run; see modal_app.py.
+ * 2. Unset (local dev) → spawn the local binary. With overrides, we patch
+ *    the rulespec tree on disk via patch-params.ts and compile per request.
+ *
+ * Callers don't pick a transport; they call `runEngine(slug, request,
+ * overrides?)` and the env var selects.
  */
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
 import type { ExecutionRequest, ExecutionResponse } from "./types";
+import type { ParameterOverride } from "./patch-params";
 
 const ROOT = path.resolve(process.cwd());
 const BINARY =
@@ -25,6 +27,37 @@ const ARTIFACTS_DIR =
   process.env.AXIOM_ARTIFACTS_DIR || path.join(ROOT, "engine/artifacts");
 
 const ENGINE_URL = process.env.AXIOM_ENGINE_URL?.replace(/\/$/, "");
+
+/** Single entry point. When `overrides` is empty, the prebuilt artifact is
+ *  used; otherwise the engine compiles a patched program first. */
+export async function runEngine(
+  slug: string,
+  request: ExecutionRequest,
+  overrides: ParameterOverride[] = [],
+): Promise<ExecutionResponse> {
+  if (ENGINE_URL) return runViaHttp(slug, request, overrides);
+  if (overrides.length === 0) return runViaSubprocess(["run-compiled", "--artifact", await artifactPath(slug)], request);
+  // Local override path: patch on disk, compile, run.
+  const { writePatchedRulespec } = await import("./patch-params");
+  const programYaml = await writePatchedRulespec(overrides);
+  return runWithProgramLocal(programYaml, request);
+}
+
+async function runViaHttp(
+  slug: string,
+  request: ExecutionRequest,
+  overrides: ParameterOverride[],
+): Promise<ExecutionResponse> {
+  const r = await fetch(`${ENGINE_URL}/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ program: slug, request, overrides }),
+  });
+  if (!r.ok) {
+    throw new Error(`axiom-engine ${r.status}: ${(await r.text()).slice(0, 500)}`);
+  }
+  return (await r.json()) as ExecutionResponse;
+}
 
 let cachedBinaryOk: boolean | null = null;
 async function ensureBinary(): Promise<void> {
@@ -40,40 +73,13 @@ async function ensureBinary(): Promise<void> {
 }
 
 async function artifactPath(slug: string): Promise<string> {
+  await ensureBinary();
   const p = path.join(ARTIFACTS_DIR, `${slug}.compiled.json`);
   await fs.access(p, fs.constants.R_OK);
   return p;
 }
 
-/** Run a precompiled artifact. */
-export async function runCompiled(
-  slug: string,
-  request: ExecutionRequest,
-): Promise<ExecutionResponse> {
-  if (ENGINE_URL) {
-    const r = await fetch(`${ENGINE_URL}/run`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ program: slug, request }),
-    });
-    if (!r.ok) throw new Error(`axiom-engine ${r.status}: ${(await r.text()).slice(0, 500)}`);
-    return (await r.json()) as ExecutionResponse;
-  }
-  await ensureBinary();
-  const artifact = await artifactPath(slug);
-  return spawnEngine(["run-compiled", "--artifact", artifact], request);
-}
-
-/** Run a freshly compiled program against the engine's execute path.
- *
- *  Internally invokes `axiom-rules-engine compile` to produce a scratch
- *  artifact, then `run-compiled` against it. This is the path used when
- *  parameters have been overridden — see lib/engine/patch-params.ts.
- *
- *  The temp artifact lives under engine/artifacts/.tmp-<token>.json and is
- *  cleaned up after the run.
- */
-export async function runWithProgram(
+async function runWithProgramLocal(
   programYamlPath: string,
   request: ExecutionRequest,
 ): Promise<ExecutionResponse> {
@@ -96,13 +102,16 @@ export async function runWithProgram(
         else resolve();
       });
     });
-    return await spawnEngine(["run-compiled", "--artifact", tmpArtifact], request);
+    return await runViaSubprocess(["run-compiled", "--artifact", tmpArtifact], request);
   } finally {
     await fs.rm(tmpArtifact, { force: true });
   }
 }
 
-function spawnEngine(args: string[], request: ExecutionRequest): Promise<ExecutionResponse> {
+function runViaSubprocess(
+  args: string[],
+  request: ExecutionRequest,
+): Promise<ExecutionResponse> {
   return new Promise((resolve, reject) => {
     const child = spawn(BINARY, args, { stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";

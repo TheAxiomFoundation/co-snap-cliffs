@@ -13,7 +13,7 @@
  * so MTR > 0 means SNAP fell as earnings rose; MTR ≥ 100% means SNAP fell by
  * more than the earnings increment (a true cliff: more earnings, less net).
  */
-import { runCompiled, runWithProgram } from "./engine/run";
+import { runEngine } from "./engine/run";
 import {
   ARTIFACT_SLUG,
   buildSweepRequest,
@@ -24,7 +24,6 @@ import {
 import { CO_SNAP_BASE } from "./programs/co-snap-base";
 import { readOutput, type OutputValue } from "./engine/types";
 import type { ParameterOverride } from "./engine/patch-params";
-import { writePatchedRulespec } from "./engine/patch-params";
 
 export interface SweepPoint {
   earnings: number;
@@ -78,13 +77,7 @@ export async function runCliffSweep(opts: SweepOptions): Promise<SweepResult> {
   const { request } = buildSweepRequest(opts.household, earningsPoints);
 
   const overrides = opts.parameter_overrides ?? [];
-  const response =
-    overrides.length === 0
-      ? await runCompiled(ARTIFACT_SLUG, request)
-      : await (async () => {
-          const programPath = await writePatchedRulespec(overrides);
-          return runWithProgram(programPath, request);
-        })();
+  const response = await runEngine(ARTIFACT_SLUG, request, overrides);
 
   const idForOutput = (name: SurfaceOutputName): string =>
     (CO_SNAP_BASE.outputs_by_name as Record<string, string>)[name] ?? name;
