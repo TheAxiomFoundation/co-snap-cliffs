@@ -1,0 +1,30 @@
+node_modules/
+.next/
+out/
+.vercel/
+.env
+.env.local
+.env*.local
+
+# Engine clones + build artifacts (bootstrapped by scripts/setup-engine.sh)
+engine/axiom-rules-engine/
+engine/rulespec-us/
+engine/rulespec-us-co/
+engine/artifacts/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+
+# Build
+dist/
+*.tsbuildinfo
+next-env.d.ts
