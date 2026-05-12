@@ -486,8 +486,8 @@ function CliffChart({
               name="Baseline"
               stroke={INK}
               strokeWidth={1.5}
-              dot={{ r: 2.5, fill: INK, stroke: INK, strokeWidth: 0 }}
-              activeDot={{ r: 4, fill: INK, stroke: "#faf9f6", strokeWidth: 1.5 }}
+              dot={false}
+              activeDot={{ r: 4, fill: ACCENT, stroke: "#faf9f6", strokeWidth: 1.5 }}
               isAnimationActive
               animationDuration={350}
               animationEasing="ease-out"
@@ -500,7 +500,7 @@ function CliffChart({
                 stroke={ACCENT}
                 strokeWidth={1.5}
                 strokeDasharray="6 3"
-                dot={{ r: 2.5, fill: ACCENT, stroke: ACCENT, strokeWidth: 0 }}
+                dot={false}
                 activeDot={{ r: 4, fill: ACCENT, stroke: "#faf9f6", strokeWidth: 1.5 }}
                 isAnimationActive
                 animationDuration={350}
