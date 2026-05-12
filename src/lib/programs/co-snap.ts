@@ -94,7 +94,7 @@ export function buildSweepRequest(
 
   const inputs: InputRecord[] = [];
   const relations: RelationRecord[] = [];
-  const queries = [];
+  const queries: ExecutionRequest["queries"] = [];
 
   earningsPoints.forEach((earnings, idx) => {
     const facts: CoSnapFacts = { ...baseFacts, monthly_earnings_per_adult: earnings };
