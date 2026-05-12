@@ -100,20 +100,30 @@ export default function Page() {
 
   const chartData = useMemo(() => {
     if (!baseline) return [];
-    return baseline.points.map((p, i) => ({
-      earnings: p.earnings,
-      baseline_snap: p.snap,
-      baseline_net: p.net_resources,
-      baseline_mtr_pct: p.mtr === null ? null : Math.max(0, p.mtr * 100),
-      reform_snap: reform?.points[i]?.snap ?? null,
-      reform_net: reform?.points[i]?.net_resources ?? null,
-      reform_mtr_pct:
-        reform?.points[i]?.mtr === undefined || reform?.points[i]?.mtr === null
-          ? null
-          : Math.max(0, (reform!.points[i].mtr as number) * 100),
-      baseline_is_cliff: p.is_cliff,
-      reform_is_cliff: reform?.points[i]?.is_cliff ?? false,
-    }));
+    // When reform hasn't been computed yet, seed the reform-series fields from
+    // the baseline values. The Reform Line + Area then mount sitting exactly
+    // on top of Baseline, and Recharts animates *away* from baseline once the
+    // first reform fetch returns — instead of mounting from null and visibly
+    // snapping into place on the user's first slider nudge.
+    return baseline.points.map((p, i) => {
+      const reformPoint = reform?.points[i];
+      const baselineMtrPct = p.mtr === null ? null : Math.max(0, p.mtr * 100);
+      const reformMtr = reformPoint?.mtr;
+      return {
+        earnings: p.earnings,
+        baseline_snap: p.snap,
+        baseline_net: p.net_resources,
+        baseline_mtr_pct: baselineMtrPct,
+        reform_snap: reformPoint?.snap ?? p.snap,
+        reform_net: reformPoint?.net_resources ?? p.net_resources,
+        reform_mtr_pct:
+          reformMtr === undefined || reformMtr === null
+            ? baselineMtrPct
+            : Math.max(0, reformMtr * 100),
+        baseline_is_cliff: p.is_cliff,
+        reform_is_cliff: reformPoint?.is_cliff ?? false,
+      };
+    });
   }, [baseline, reform]);
 
   return (
@@ -467,19 +477,18 @@ function CliffChart({
                 }}
               />
             )}
-            {reformDirty && (
-              <Area
-                type="monotone"
-                dataKey={reformKey as string}
-                stroke="none"
-                fill="url(#delta-fill)"
-                isAnimationActive
-                animationDuration={350}
-                animationEasing="ease-out"
-                activeDot={false}
-                legendType="none"
-              />
-            )}
+            <Area
+              type="monotone"
+              dataKey={reformKey as string}
+              stroke="none"
+              fill="url(#delta-fill)"
+              fillOpacity={reformDirty ? 1 : 0}
+              isAnimationActive
+              animationDuration={350}
+              animationEasing="ease-out"
+              activeDot={false}
+              legendType="none"
+            />
             <Line
               type="monotone"
               dataKey={baselineKey as string}
@@ -492,21 +501,24 @@ function CliffChart({
               animationDuration={350}
               animationEasing="ease-out"
             />
-            {reformDirty && (
-              <Line
-                type="monotone"
-                dataKey={reformKey as string}
-                name="Reform"
-                stroke={ACCENT}
-                strokeWidth={1.5}
-                strokeDasharray="6 3"
-                dot={false}
-                activeDot={{ r: 4, fill: ACCENT, stroke: "#faf9f6", strokeWidth: 1.5 }}
-                isAnimationActive
-                animationDuration={350}
-                animationEasing="ease-out"
-              />
-            )}
+            <Line
+              type="monotone"
+              dataKey={reformKey as string}
+              name="Reform"
+              stroke={ACCENT}
+              strokeWidth={1.5}
+              strokeDasharray="6 3"
+              strokeOpacity={reformDirty ? 1 : 0}
+              dot={false}
+              activeDot={
+                reformDirty
+                  ? { r: 4, fill: ACCENT, stroke: "#faf9f6", strokeWidth: 1.5 }
+                  : false
+              }
+              isAnimationActive
+              animationDuration={350}
+              animationEasing="ease-out"
+            />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
