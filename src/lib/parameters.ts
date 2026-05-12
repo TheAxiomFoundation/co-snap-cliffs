@@ -34,7 +34,9 @@ export interface LeverSpec {
 const US_DEDUCTIONS = "policies/usda/snap/fy-2026-cola/deductions.yaml";
 const US_INCOME = "policies/usda/snap/fy-2026-cola/income-eligibility-standards.yaml";
 const US_MAX_ALLOTMENT = "policies/usda/snap/fy-2026-cola/maximum-allotments.yaml";
-// Colorado BBCE expanded gross-income limit lives in 4.401.1 in the CO repo.
+// 7 USC 2014(e)(2) defines the 0.20 earned-income deduction rate.
+const US_EARNED_DEDUCTION = "statutes/7/2014/e/2.yaml";
+// Colorado BBCE FPL ratio (default 2.00 = 200% FPL) lives in 4.401.1.
 const CO_BBCE = "regulations/10-ccr-2506-1/4.401.1.yaml";
 
 export const LEVERS: LeverSpec[] = [
@@ -92,8 +94,8 @@ export const LEVERS: LeverSpec[] = [
     build_overrides: (m) => [
       {
         repo: "rules-us",
-        file_relative: US_DEDUCTIONS,
-        parameter: "snap_earned_income_deduction_percent",
+        file_relative: US_EARNED_DEDUCTION,
+        parameter: "snap_earned_income_deduction_rate",
         patch: { kind: "scale_formula", multiplier: m },
       },
     ],
@@ -147,8 +149,8 @@ export const LEVERS: LeverSpec[] = [
       {
         repo: "rules-us-co",
         file_relative: CO_BBCE,
-        parameter: "co_snap_expanded_categorical_gross_income_limit_table",
-        patch: { kind: "scale_values", multiplier: m },
+        parameter: "co_snap_expanded_categorical_income_fpl_ratio",
+        patch: { kind: "scale_formula", multiplier: m },
       },
     ],
   },
