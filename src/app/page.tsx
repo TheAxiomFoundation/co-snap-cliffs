@@ -473,7 +473,9 @@ function CliffChart({
                 dataKey={reformKey as string}
                 stroke="none"
                 fill="url(#delta-fill)"
-                isAnimationActive={false}
+                isAnimationActive
+                animationDuration={350}
+                animationEasing="ease-out"
                 activeDot={false}
                 legendType="none"
               />
@@ -484,8 +486,11 @@ function CliffChart({
               name="Baseline"
               stroke={INK}
               strokeWidth={1.5}
-              dot={false}
-              isAnimationActive={false}
+              dot={{ r: 2.5, fill: INK, stroke: INK, strokeWidth: 0 }}
+              activeDot={{ r: 4, fill: INK, stroke: "#faf9f6", strokeWidth: 1.5 }}
+              isAnimationActive
+              animationDuration={350}
+              animationEasing="ease-out"
             />
             {reformDirty && (
               <Line
@@ -495,8 +500,11 @@ function CliffChart({
                 stroke={ACCENT}
                 strokeWidth={1.5}
                 strokeDasharray="6 3"
-                dot={false}
-                isAnimationActive={false}
+                dot={{ r: 2.5, fill: ACCENT, stroke: ACCENT, strokeWidth: 0 }}
+                activeDot={{ r: 4, fill: ACCENT, stroke: "#faf9f6", strokeWidth: 1.5 }}
+                isAnimationActive
+                animationDuration={350}
+                animationEasing="ease-out"
               />
             )}
           </ComposedChart>
