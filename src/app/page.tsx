@@ -2,15 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Area,
+  ComposedChart,
   CartesianGrid,
   Line,
-  LineChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
-  Legend,
 } from "recharts";
 
 import { LEVERS } from "@/lib/parameters";
@@ -278,149 +278,42 @@ export default function Page() {
         <section className="col-span-12 space-y-6 md:col-span-8">
           <Summary baseline={baseline} reform={reform} reformDirty={reformDirty} />
 
-          <Card title="Net resources vs earnings">
-            <ChartContainer>
-              <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 24, left: 8 }}>
-                <CartesianGrid stroke="#e7e5e4" strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="earnings"
-                  tickFormatter={(v) => `$${v}`}
-                  label={{ value: "Monthly earnings ($)", position: "bottom", offset: 8 }}
-                  stroke="#78716c"
-                  fontSize={11}
-                />
-                <YAxis
-                  tickFormatter={(v) => `$${v}`}
-                  stroke="#78716c"
-                  fontSize={11}
-                  label={{ value: "Earnings + SNAP", angle: -90, position: "left" }}
-                />
-                <Tooltip
-                  formatter={(v: number) =>
-                    typeof v === "number" ? `$${Math.round(v)}` : v
-                  }
-                  labelFormatter={(l) => `Earnings $${l}`}
-                />
-                <Legend verticalAlign="top" height={28} />
-                <Line
-                  type="monotone"
-                  dataKey="baseline_net"
-                  name="Baseline (current law)"
-                  stroke="#1c1917"
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-                {reformDirty && (
-                  <Line
-                    type="monotone"
-                    dataKey="reform_net"
-                    name="Reform"
-                    stroke="#92400e"
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                )}
-              </LineChart>
-            </ChartContainer>
-          </Card>
+          <CliffChart
+            title="Net resources vs earnings"
+            eyebrow="§ I · earnings + SNAP allotment"
+            data={chartData}
+            baselineKey="baseline_net"
+            reformKey="reform_net"
+            reformDirty={reformDirty}
+            yFormat={dollars}
+            valueFormat={dollars}
+            yLabel="$ / month"
+          />
 
-          <Card title="SNAP allotment vs earnings">
-            <ChartContainer>
-              <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 24, left: 8 }}>
-                <CartesianGrid stroke="#e7e5e4" strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="earnings"
-                  tickFormatter={(v) => `$${v}`}
-                  label={{ value: "Monthly earnings ($)", position: "bottom", offset: 8 }}
-                  stroke="#78716c"
-                  fontSize={11}
-                />
-                <YAxis
-                  tickFormatter={(v) => `$${v}`}
-                  stroke="#78716c"
-                  fontSize={11}
-                />
-                <Tooltip
-                  formatter={(v: number) =>
-                    typeof v === "number" ? `$${Math.round(v)}` : v
-                  }
-                  labelFormatter={(l) => `Earnings $${l}`}
-                />
-                <Legend verticalAlign="top" height={28} />
-                <Line
-                  type="monotone"
-                  dataKey="baseline_snap"
-                  name="Baseline"
-                  stroke="#1c1917"
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-                {reformDirty && (
-                  <Line
-                    type="monotone"
-                    dataKey="reform_snap"
-                    name="Reform"
-                    stroke="#92400e"
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                )}
-              </LineChart>
-            </ChartContainer>
-          </Card>
+          <CliffChart
+            title="SNAP allotment"
+            eyebrow="§ II · monthly benefit"
+            data={chartData}
+            baselineKey="baseline_snap"
+            reformKey="reform_snap"
+            reformDirty={reformDirty}
+            yFormat={dollars}
+            valueFormat={dollars}
+            yLabel="$ / month"
+          />
 
-          <Card title="Marginal tax rate (MTR) on SNAP">
-            <ChartContainer>
-              <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 24, left: 8 }}>
-                <CartesianGrid stroke="#e7e5e4" strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="earnings"
-                  tickFormatter={(v) => `$${v}`}
-                  label={{ value: "Monthly earnings ($)", position: "bottom", offset: 8 }}
-                  stroke="#78716c"
-                  fontSize={11}
-                />
-                <YAxis
-                  tickFormatter={(v) => `${v}%`}
-                  stroke="#78716c"
-                  fontSize={11}
-                  domain={[0, "auto"]}
-                />
-                <Tooltip
-                  formatter={(v: number) =>
-                    typeof v === "number" ? `${v.toFixed(1)}%` : v
-                  }
-                  labelFormatter={(l) => `Earnings $${l}`}
-                />
-                <Legend verticalAlign="top" height={28} />
-                <ReferenceLine y={100} stroke="#991b1b" strokeDasharray="4 2" label="cliff" />
-                <Line
-                  type="monotone"
-                  dataKey="baseline_mtr_pct"
-                  name="Baseline"
-                  stroke="#1c1917"
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-                {reformDirty && (
-                  <Line
-                    type="monotone"
-                    dataKey="reform_mtr_pct"
-                    name="Reform"
-                    stroke="#92400e"
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                )}
-              </LineChart>
-            </ChartContainer>
-          </Card>
+          <CliffChart
+            title="Marginal tax rate on SNAP"
+            eyebrow="§ III · benefit-loss per additional earned dollar"
+            data={chartData}
+            baselineKey="baseline_mtr_pct"
+            reformKey="reform_mtr_pct"
+            reformDirty={reformDirty}
+            yFormat={percent}
+            valueFormat={percent}
+            yLabel="%"
+            referenceLine={{ y: 100, label: "cliff threshold" }}
+          />
         </section>
       </div>
     </main>
@@ -451,12 +344,226 @@ function Card({
   );
 }
 
-function ChartContainer({ children }: { children: React.ReactElement }) {
+const INK = "#1c1917";
+const ACCENT = "#92400e";
+const RULE = "#e7e5e4";
+const RULE_STRONG = "#78716c";
+const ERROR = "#991b1b";
+
+const dollars = (v: number): string =>
+  v < 0 ? `-$${Math.abs(Math.round(v)).toLocaleString()}` : `$${Math.round(v).toLocaleString()}`;
+const percent = (v: number): string => `${v.toFixed(0)}%`;
+
+interface ChartDatum {
+  earnings: number;
+  baseline_snap: number;
+  baseline_net: number;
+  baseline_mtr_pct: number | null;
+  reform_snap: number | null;
+  reform_net: number | null;
+  reform_mtr_pct: number | null;
+  baseline_is_cliff: boolean;
+  reform_is_cliff: boolean;
+}
+
+function CliffChart({
+  title,
+  eyebrow,
+  data,
+  baselineKey,
+  reformKey,
+  reformDirty,
+  yFormat,
+  valueFormat,
+  yLabel,
+  referenceLine,
+}: {
+  title: string;
+  eyebrow: string;
+  data: ChartDatum[];
+  baselineKey: keyof ChartDatum;
+  reformKey: keyof ChartDatum;
+  reformDirty: boolean;
+  yFormat: (v: number) => string;
+  valueFormat: (v: number) => string;
+  yLabel: string;
+  referenceLine?: { y: number; label: string };
+}) {
   return (
-    <div style={{ width: "100%", height: 260 }}>
-      <ResponsiveContainer width="100%" height="100%">
-        {children}
-      </ResponsiveContainer>
+    <Card title={title} eyebrow={eyebrow}>
+      <ChartLegend reformDirty={reformDirty} />
+      <div style={{ width: "100%", height: 260 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 8, right: 18, bottom: 28, left: 6 }}>
+            <defs>
+              <linearGradient id="delta-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={ACCENT} stopOpacity={0.18} />
+                <stop offset="100%" stopColor={ACCENT} stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid stroke={RULE} strokeDasharray="2 4" vertical={false} />
+            <XAxis
+              dataKey="earnings"
+              tickFormatter={dollars}
+              stroke={RULE_STRONG}
+              strokeWidth={1}
+              tick={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, fill: RULE_STRONG }}
+              tickLine={{ stroke: RULE_STRONG }}
+              label={{
+                value: "MONTHLY EARNINGS",
+                position: "bottom",
+                offset: 14,
+                style: {
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: 10,
+                  fill: RULE_STRONG,
+                  letterSpacing: "0.22em",
+                },
+              }}
+            />
+            <YAxis
+              tickFormatter={yFormat}
+              stroke={RULE_STRONG}
+              strokeWidth={1}
+              tick={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, fill: RULE_STRONG }}
+              tickLine={{ stroke: RULE_STRONG }}
+              width={56}
+              domain={[0, "auto"]}
+            />
+            <Tooltip
+              cursor={{ stroke: INK, strokeWidth: 1, strokeDasharray: "2 2" }}
+              content={(props) => (
+                <TooltipCard
+                  active={Boolean(props.active)}
+                  label={typeof props.label === "number" ? props.label : Number(props.label ?? 0)}
+                  payload={
+                    Array.isArray(props.payload)
+                      ? (props.payload as Array<{
+                          name?: string;
+                          dataKey?: string;
+                          value?: number;
+                          color?: string;
+                        }>)
+                      : []
+                  }
+                  valueFormat={valueFormat}
+                  yLabel={yLabel}
+                />
+              )}
+            />
+            {referenceLine && (
+              <ReferenceLine
+                y={referenceLine.y}
+                stroke={ERROR}
+                strokeDasharray="4 3"
+                strokeWidth={1}
+                label={{
+                  value: referenceLine.label.toUpperCase(),
+                  position: "insideTopRight",
+                  fill: ERROR,
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: 9,
+                  letterSpacing: "0.18em",
+                }}
+              />
+            )}
+            {reformDirty && (
+              <Area
+                type="monotone"
+                dataKey={reformKey as string}
+                stroke="none"
+                fill="url(#delta-fill)"
+                isAnimationActive={false}
+                activeDot={false}
+                legendType="none"
+              />
+            )}
+            <Line
+              type="monotone"
+              dataKey={baselineKey as string}
+              name="Baseline"
+              stroke={INK}
+              strokeWidth={1.5}
+              dot={false}
+              isAnimationActive={false}
+            />
+            {reformDirty && (
+              <Line
+                type="monotone"
+                dataKey={reformKey as string}
+                name="Reform"
+                stroke={ACCENT}
+                strokeWidth={1.5}
+                strokeDasharray="6 3"
+                dot={false}
+                isAnimationActive={false}
+              />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </Card>
+  );
+}
+
+function ChartLegend({ reformDirty }: { reformDirty: boolean }) {
+  return (
+    <div className="-mt-1 mb-3 flex items-center gap-5 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-secondary">
+      <span className="flex items-center gap-2">
+        <span className="inline-block h-[2px] w-5 bg-ink" />
+        baseline · current law
+      </span>
+      {reformDirty && (
+        <span className="flex items-center gap-2 text-accent">
+          <span
+            className="inline-block h-[2px] w-5"
+            style={{
+              backgroundImage: `repeating-linear-gradient(90deg, ${ACCENT} 0 4px, transparent 4px 6px)`,
+            }}
+          />
+          reform
+        </span>
+      )}
+    </div>
+  );
+}
+
+function TooltipCard({
+  active,
+  label,
+  payload,
+  valueFormat,
+  yLabel,
+}: {
+  active: boolean;
+  label: number;
+  payload: Array<{ name?: string; dataKey?: string; value?: number; color?: string }>;
+  valueFormat: (v: number) => string;
+  yLabel: string;
+}) {
+  if (!active || payload.length === 0) return null;
+  return (
+    <div className="border border-rule bg-paper-elevated px-3 py-2 shadow-sm">
+      <div className="mb-1 font-mono text-[9px] uppercase tracking-[0.22em] text-ink-muted">
+        earnings · ${Math.round(label).toLocaleString()} / mo
+      </div>
+      {payload.map((p) => (
+        <div
+          key={p.dataKey}
+          className="flex items-baseline justify-between gap-4 font-mono text-xs"
+        >
+          <span
+            className="lowercase tracking-wider"
+            style={{ color: p.color === ACCENT ? ACCENT : INK }}
+          >
+            {p.name}
+          </span>
+          <span className="tabular-nums" style={{ color: p.color === ACCENT ? ACCENT : INK }}>
+            {p.value === undefined || p.value === null ? "—" : valueFormat(p.value)}
+            <span className="ml-1 text-[9px] text-ink-muted">{yLabel}</span>
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
