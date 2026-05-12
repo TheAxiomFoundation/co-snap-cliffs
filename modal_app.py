@@ -27,7 +27,7 @@ import modal
 
 app = modal.App("co-snap-cliffs")
 
-ENGINE_VERSION = "v1-init"
+ENGINE_VERSION = "v2-correct-binary-name"
 
 # Pinned commit SHAs. Match finbot-snap-demo so the compiled-artifact input
 # slots line up with src/lib/programs/co-snap-base.ts (auto-generated from
@@ -37,7 +37,7 @@ RULESPEC_US_SHA = "2f3a30991e1f8279c2fa664e51f068a63d905591"
 RULESPEC_US_CO_SHA = "ba00673d73c19f262d542cfa597b0b365a1313b7"
 
 PROGRAMS = [
-    ("co-snap", "rulespec-us-co/policies/cdhs/snap/fy-2026-benefit-calculation.yaml"),
+    ("co-snap", "rules-us-co/policies/cdhs/snap/fy-2026-benefit-calculation.yaml"),
 ]
 
 image = (
@@ -51,14 +51,18 @@ image = (
         f"echo 'engine: {ENGINE_VERSION}'",
         "git clone https://github.com/TheAxiomFoundation/axiom-rules-engine.git /opt/axiom-rules-engine",
         f"cd /opt/axiom-rules-engine && git checkout {AXIOM_RULES_ENGINE_SHA}",
-        "git clone https://github.com/TheAxiomFoundation/rulespec-us.git /opt/rulespec-us",
-        f"cd /opt/rulespec-us && git checkout {RULESPEC_US_SHA}",
-        "git clone https://github.com/TheAxiomFoundation/rulespec-us-co.git /opt/rulespec-us-co",
-        f"cd /opt/rulespec-us-co && git checkout {RULESPEC_US_CO_SHA}",
+        # Engine at this SHA looks for sibling dirs named `rules-{prefix}`
+        # via ancestor traversal — see candidate_rule_repo_roots in
+        # axiom-rules-engine/src/rulespec.rs. Clone to those names, not
+        # `rulespec-*`, or imports fail to resolve at compile time.
+        "git clone https://github.com/TheAxiomFoundation/rulespec-us.git /opt/rules-us",
+        f"cd /opt/rules-us && git checkout {RULESPEC_US_SHA}",
+        "git clone https://github.com/TheAxiomFoundation/rulespec-us-co.git /opt/rules-us-co",
+        f"cd /opt/rules-us-co && git checkout {RULESPEC_US_CO_SHA}",
         ". $HOME/.cargo/env && cd /opt/axiom-rules-engine && cargo build --release",
         "mkdir -p /opt/artifacts",
         *[
-            f"/opt/axiom-rules-engine/target/release/axiom-rules-engine compile "
+            f"/opt/axiom-rules-engine/target/release/axiom-rules compile "
             f"--program /opt/{path} "
             f"--output /opt/artifacts/{slug}.compiled.json"
             for slug, path in PROGRAMS
@@ -93,15 +97,15 @@ def web():
     from fastapi.middleware.cors import CORSMiddleware
     from ruamel.yaml import YAML
 
-    BIN = "/opt/axiom-rules-engine/target/release/axiom-rules-engine"
+    BIN = "/opt/axiom-rules-engine/target/release/axiom-rules"
     ARTIFACTS = {slug: f"/opt/artifacts/{slug}.compiled.json" for slug, _ in PROGRAMS}
-    # Vercel sends override.repo as "rules-us" / "rules-us-co" because that's
-    # the dev-mode layout; map to the Modal layout's actual dir names.
+    # Vercel sends override.repo as "rules-us" / "rules-us-co" matching the
+    # dev-mode layout. Accept either spelling.
     REPO_DIR = {
-        "rules-us": "/opt/rulespec-us",
-        "rules-us-co": "/opt/rulespec-us-co",
-        "rulespec-us": "/opt/rulespec-us",
-        "rulespec-us-co": "/opt/rulespec-us-co",
+        "rules-us": "/opt/rules-us",
+        "rules-us-co": "/opt/rules-us-co",
+        "rulespec-us": "/opt/rules-us",
+        "rulespec-us-co": "/opt/rules-us-co",
     }
     PROGRAM_REL_BY_SLUG = {slug: rel for slug, rel in PROGRAMS}
 
@@ -151,7 +155,7 @@ def web():
         # Symlinks would be faster but the engine canonicalizes paths during
         # ancestor traversal for imports — a full copy of both repos (~1.3 MB)
         # is cheap (<50 ms) and avoids that landmine.
-        for src_name in ("rulespec-us", "rulespec-us-co"):
+        for src_name in ("rules-us", "rules-us-co"):
             shutil.copytree(f"/opt/{src_name}", scratch / src_name)
 
         by_file: dict[Path, list[dict[str, Any]]] = {}
@@ -159,9 +163,7 @@ def web():
             repo = ov["repo"]
             if repo not in REPO_DIR:
                 raise HTTPException(400, f"unknown override repo: {repo!r}")
-            # Always use the canonical "rulespec-*" name inside scratch since
-            # that's how we cloned it onto the image.
-            scratch_repo = "rulespec-us" if "us-co" not in repo else "rulespec-us-co"
+            scratch_repo = "rules-us-co" if "us-co" in repo else "rules-us"
             file = scratch / scratch_repo / ov["file_relative"]
             by_file.setdefault(file, []).append(ov)
 
