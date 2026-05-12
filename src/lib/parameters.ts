@@ -34,14 +34,16 @@ export interface LeverSpec {
 const US_DEDUCTIONS = "policies/usda/snap/fy-2026-cola/deductions.yaml";
 const US_INCOME = "policies/usda/snap/fy-2026-cola/income-eligibility-standards.yaml";
 const US_MAX_ALLOTMENT = "policies/usda/snap/fy-2026-cola/maximum-allotments.yaml";
-// Colorado BBCE expanded gross-income limit lives in 4.401.1 in the CO repo.
+// 7 USC 2014(e)(2) defines the 0.20 earned-income deduction rate.
+const US_EARNED_DEDUCTION = "statutes/7/2014/e/2.yaml";
+// Colorado BBCE FPL ratio (default 2.00 = 200% FPL) lives in 4.401.1.
 const CO_BBCE = "regulations/10-ccr-2506-1/4.401.1.yaml";
 
 export const LEVERS: LeverSpec[] = [
   {
     id: "max_allotment_scale",
     group: "max-allotment",
-    label: "Max allotment (48 states + DC)",
+    label: "Max allotment ($298 / 1-person)",
     description: "Scale every row of the maximum allotment table by household size.",
     baseline_label: "1-person: $298 / mo",
     min_multiplier: 0.5,
@@ -65,9 +67,9 @@ export const LEVERS: LeverSpec[] = [
   {
     id: "standard_deduction_scale",
     group: "deductions",
-    label: "Standard deduction",
+    label: "Standard deduction ($209 / 1–3 person)",
     description: "Scale the SNAP standard deduction table.",
-    baseline_label: "1–3 person: $204 / mo",
+    baseline_label: "1–3 person: $209 / mo",
     min_multiplier: 0,
     max_multiplier: 2,
     step: 0.05,
@@ -92,8 +94,8 @@ export const LEVERS: LeverSpec[] = [
     build_overrides: (m) => [
       {
         repo: "rules-us",
-        file_relative: US_DEDUCTIONS,
-        parameter: "snap_earned_income_deduction_percent",
+        file_relative: US_EARNED_DEDUCTION,
+        parameter: "snap_earned_income_deduction_rate",
         patch: { kind: "scale_formula", multiplier: m },
       },
     ],
@@ -137,7 +139,7 @@ export const LEVERS: LeverSpec[] = [
   {
     id: "co_bbce_limit_scale",
     group: "bbce",
-    label: "Colorado BBCE gross-income limit",
+    label: "Colorado BBCE limit (200% FPL)",
     description: "Scale Colorado's expanded categorical-eligibility gross-income limit.",
     baseline_label: "200% FPL",
     min_multiplier: 0.5,
@@ -147,8 +149,8 @@ export const LEVERS: LeverSpec[] = [
       {
         repo: "rules-us-co",
         file_relative: CO_BBCE,
-        parameter: "co_snap_expanded_categorical_gross_income_limit_table",
-        patch: { kind: "scale_values", multiplier: m },
+        parameter: "co_snap_expanded_categorical_income_fpl_ratio",
+        patch: { kind: "scale_formula", multiplier: m },
       },
     ],
   },

@@ -95,7 +95,12 @@ function applyPatch(rule: NonNullable<RuleSpecDoc["rules"]>[number], patch: Para
 }
 
 async function copyDir(src: string, dst: string): Promise<void> {
-  await fs.cp(src, dst, { recursive: true, dereference: false });
+  // dereference: true is CRITICAL. The local engine layout uses symlinks
+  // (engine/rules-us → ~/finbot-snap-demo/engine/rules-us) for dev speed.
+  // Without dereferencing, fs.cp copies the symlink AS a symlink, and a
+  // subsequent fs.writeFile on the patched path writes *through* the symlink
+  // into the real source repo — silently corrupting the baseline rulespec.
+  await fs.cp(src, dst, { recursive: true, dereference: true });
 }
 
 /** Write a patched rule tree and return the absolute path to the root program

@@ -3,9 +3,14 @@
  * single-person household across $0–$2000/mo wages and reports timing,
  * sample points, and cliff summary. Exits non-zero if anything looks off.
  *
+ * Also exercises every adjustable lever in src/lib/parameters.ts so that a
+ * misnamed parameter id or wrong file path surfaces here, before it hits the
+ * UI as a 500 from the API route.
+ *
  * Usage: bun run cliff:test
  */
 import { runCliffSweep } from "../src/lib/cliffs";
+import { LEVERS } from "../src/lib/parameters";
 
 async function main(): Promise<void> {
   console.log("→ baseline sweep, single adult age 30, $500 shelter");
@@ -87,6 +92,26 @@ async function main(): Promise<void> {
   console.log(
     `ok — at $1200 earnings, std-deduction cut drops SNAP from $${baselineMid} to $${reformMid}`,
   );
+
+  console.log("\n→ all levers — single-multiplier sweep to catch misnamed params");
+  for (const lever of LEVERS) {
+    try {
+      const r = await runCliffSweep({
+        household: { household_size: 1, oldest_member_age: 30 },
+        earnings_min: 0,
+        earnings_max: 800,
+        earnings_step: 400,
+        parameter_overrides: lever.build_overrides(1.1),
+      });
+      console.log(
+        `      ok  ${lever.id.padEnd(38)} → ${r.points.length} pts, $${r.points[0].snap} @ $0`,
+      );
+    } catch (e) {
+      console.error(`      FAIL ${lever.id}: ${(e as Error).message.split("\n")[0]}`);
+      process.exit(1);
+    }
+  }
+  console.log("ok — every lever compiles and runs");
 }
 
 main().catch((err) => {
