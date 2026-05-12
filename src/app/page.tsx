@@ -117,28 +117,56 @@ export default function Page() {
   }, [baseline, reform]);
 
   return (
-    <main className="mx-auto max-w-7xl px-6 py-10">
-      <header className="mb-8 flex items-baseline justify-between">
+    <main className="relative z-10 mx-auto max-w-7xl px-6 pb-16 pt-10">
+      <nav className="mb-12 flex items-center gap-3">
+        <a href="https://axiomfoundation.org" className="inline-flex w-[132px] no-underline">
+          <img
+            src="/axiom-foundation.svg"
+            alt="Axiom Foundation"
+            width={132}
+            className="block w-full h-auto"
+          />
+        </a>
+        <span className="ml-2 text-xs uppercase tracking-[0.18em] text-ink-muted">
+          / co snap cliffs
+        </span>
+      </nav>
+
+      <header className="mb-10 flex items-end justify-between border-b border-rule pb-6">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">CO SNAP Cliffs</h1>
-          <p className="mt-1 text-sm text-ink/60">
-            Adjust Colorado SNAP parameters and see how cliffs shift. Powered by{" "}
-            <code className="font-mono text-xs">axiom-rules-engine</code>.
+          <div className="text-[11px] uppercase tracking-[0.22em] text-ink-muted">
+            Interactive · Colorado Department of Human Services · SNAP FY 2026
+          </div>
+          <h1 className="mt-2 text-4xl font-bold tracking-[-0.04em] text-ink">
+            CO&nbsp;SNAP&nbsp;cliffs
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-secondary">
+            Adjust Colorado SNAP policy levers and watch the benefit-cliff
+            structure change in real time. Every dollar comes from a live
+            compute against <code className="font-mono text-[12px] text-accent">axiom-rules-engine</code>{" "}
+            executing the encoded CO SNAP composition — no model recall, no
+            PolicyEngine.
           </p>
         </div>
-        <div className="text-xs text-ink/50">
-          {loading ? "computing…" : baseline && `baseline ${baseline.ms} ms`}
-          {reform && !loading && ` · reform ${reform.ms} ms`}
+        <div className="font-mono text-[11px] text-ink-muted">
+          {loading
+            ? "computing…"
+            : baseline && (
+                <>
+                  baseline {baseline.ms}&thinsp;ms
+                  {reform && <> · reform {reform.ms}&thinsp;ms</>}
+                </>
+              )}
         </div>
       </header>
 
       {err && (
-        <div className="mb-6 rounded-md border border-rose-glow/40 bg-rose-glow/5 px-4 py-3 text-sm text-rose-glow">
+        <div className="mb-6 border border-error/40 bg-error/5 px-4 py-3 text-sm text-error">
           {err}
         </div>
       )}
 
-      <div className="grid grid-cols-12 gap-6">
+      <div className="grid grid-cols-12 gap-8">
         <aside className="col-span-12 space-y-6 md:col-span-4">
           <Card title="Household">
             <NumberRow
@@ -209,15 +237,16 @@ export default function Page() {
           </Card>
 
           <Card title="Reform parameters">
-            <p className="-mt-1 mb-3 text-xs text-ink/50">
-              1.00× is current law. Drag to scale baseline values.
+            <p className="-mt-2 mb-4 text-xs leading-relaxed text-ink-secondary">
+              <span className="font-mono text-accent">1.00×</span> is current
+              law. Drag to scale baseline values; the engine recompiles in&nbsp;~70&thinsp;ms.
             </p>
             <div className="space-y-4">
               {(["income-limits", "max-allotment", "deductions", "bbce"] as const).map(
                 (group) => (
                   <div key={group}>
-                    <div className="mb-1 text-xs font-medium uppercase tracking-wide text-ink/40">
-                      {group.replace(/-/g, " ")}
+                    <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-muted">
+                      § {group.replace(/-/g, " ")}
                     </div>
                     {LEVERS.filter((l) => l.group === group).map((lever) => (
                       <LeverRow
@@ -238,7 +267,7 @@ export default function Page() {
               )}
             </div>
             <button
-              className="mt-4 w-full rounded-md border border-ink/20 px-3 py-2 text-sm font-medium hover:bg-ink/5"
+              className="mt-6 w-full border border-rule-strong px-3 py-2 text-sm font-medium uppercase tracking-wider text-ink-secondary transition-colors hover:border-accent hover:bg-accent-light hover:text-accent"
               onClick={() => setReformMultipliers(DEFAULT_MULTIPLIERS())}
             >
               Reset to current law
@@ -252,17 +281,17 @@ export default function Page() {
           <Card title="Net resources vs earnings">
             <ChartContainer>
               <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 24, left: 8 }}>
-                <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
+                <CartesianGrid stroke="#e7e5e4" strokeDasharray="3 3" />
                 <XAxis
                   dataKey="earnings"
                   tickFormatter={(v) => `$${v}`}
                   label={{ value: "Monthly earnings ($)", position: "bottom", offset: 8 }}
-                  stroke="#6b7280"
+                  stroke="#78716c"
                   fontSize={11}
                 />
                 <YAxis
                   tickFormatter={(v) => `$${v}`}
-                  stroke="#6b7280"
+                  stroke="#78716c"
                   fontSize={11}
                   label={{ value: "Earnings + SNAP", angle: -90, position: "left" }}
                 />
@@ -277,7 +306,7 @@ export default function Page() {
                   type="monotone"
                   dataKey="baseline_net"
                   name="Baseline (current law)"
-                  stroke="#0b1220"
+                  stroke="#1c1917"
                   strokeWidth={2}
                   dot={false}
                   isAnimationActive={false}
@@ -287,7 +316,7 @@ export default function Page() {
                     type="monotone"
                     dataKey="reform_net"
                     name="Reform"
-                    stroke="#f59e0b"
+                    stroke="#92400e"
                     strokeWidth={2}
                     dot={false}
                     isAnimationActive={false}
@@ -300,17 +329,17 @@ export default function Page() {
           <Card title="SNAP allotment vs earnings">
             <ChartContainer>
               <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 24, left: 8 }}>
-                <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
+                <CartesianGrid stroke="#e7e5e4" strokeDasharray="3 3" />
                 <XAxis
                   dataKey="earnings"
                   tickFormatter={(v) => `$${v}`}
                   label={{ value: "Monthly earnings ($)", position: "bottom", offset: 8 }}
-                  stroke="#6b7280"
+                  stroke="#78716c"
                   fontSize={11}
                 />
                 <YAxis
                   tickFormatter={(v) => `$${v}`}
-                  stroke="#6b7280"
+                  stroke="#78716c"
                   fontSize={11}
                 />
                 <Tooltip
@@ -324,7 +353,7 @@ export default function Page() {
                   type="monotone"
                   dataKey="baseline_snap"
                   name="Baseline"
-                  stroke="#06b6d4"
+                  stroke="#1c1917"
                   strokeWidth={2}
                   dot={false}
                   isAnimationActive={false}
@@ -334,7 +363,7 @@ export default function Page() {
                     type="monotone"
                     dataKey="reform_snap"
                     name="Reform"
-                    stroke="#f59e0b"
+                    stroke="#92400e"
                     strokeWidth={2}
                     dot={false}
                     isAnimationActive={false}
@@ -347,17 +376,17 @@ export default function Page() {
           <Card title="Marginal tax rate (MTR) on SNAP">
             <ChartContainer>
               <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 24, left: 8 }}>
-                <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
+                <CartesianGrid stroke="#e7e5e4" strokeDasharray="3 3" />
                 <XAxis
                   dataKey="earnings"
                   tickFormatter={(v) => `$${v}`}
                   label={{ value: "Monthly earnings ($)", position: "bottom", offset: 8 }}
-                  stroke="#6b7280"
+                  stroke="#78716c"
                   fontSize={11}
                 />
                 <YAxis
                   tickFormatter={(v) => `${v}%`}
-                  stroke="#6b7280"
+                  stroke="#78716c"
                   fontSize={11}
                   domain={[0, "auto"]}
                 />
@@ -368,12 +397,12 @@ export default function Page() {
                   labelFormatter={(l) => `Earnings $${l}`}
                 />
                 <Legend verticalAlign="top" height={28} />
-                <ReferenceLine y={100} stroke="#f43f5e" strokeDasharray="4 2" label="cliff" />
+                <ReferenceLine y={100} stroke="#991b1b" strokeDasharray="4 2" label="cliff" />
                 <Line
                   type="monotone"
                   dataKey="baseline_mtr_pct"
                   name="Baseline"
-                  stroke="#06b6d4"
+                  stroke="#1c1917"
                   strokeWidth={2}
                   dot={false}
                   isAnimationActive={false}
@@ -383,7 +412,7 @@ export default function Page() {
                     type="monotone"
                     dataKey="reform_mtr_pct"
                     name="Reform"
-                    stroke="#f59e0b"
+                    stroke="#92400e"
                     strokeWidth={2}
                     dot={false}
                     isAnimationActive={false}
@@ -398,14 +427,27 @@ export default function Page() {
   );
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({
+  title,
+  children,
+  eyebrow,
+}: {
+  title: string;
+  children: React.ReactNode;
+  eyebrow?: string;
+}) {
   return (
-    <div className="rounded-lg border border-ink/10 bg-white p-5">
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-ink/50">
+    <section className="border border-rule bg-paper-elevated p-5">
+      {eyebrow && (
+        <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-muted">
+          {eyebrow}
+        </div>
+      )}
+      <h2 className="mb-4 border-b border-rule pb-3 text-base font-bold tracking-[-0.02em] text-ink">
         {title}
       </h2>
       {children}
-    </div>
+    </section>
   );
 }
 
@@ -436,7 +478,7 @@ function NumberRow({
 }) {
   return (
     <label className="mb-3 flex items-center justify-between gap-3 text-sm last:mb-0">
-      <span className="flex-1">{label}</span>
+      <span className="flex-1 text-ink-secondary">{label}</span>
       <input
         type="number"
         value={value}
@@ -444,7 +486,7 @@ function NumberRow({
         max={max}
         step={step}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-24 rounded-md border border-ink/15 px-2 py-1 text-right font-mono text-sm"
+        className="w-24 px-2 py-1 text-right font-mono text-sm"
       />
     </label>
   );
@@ -461,7 +503,7 @@ function CheckRow({
 }) {
   return (
     <label className="mb-3 flex items-center justify-between gap-3 text-sm last:mb-0">
-      <span className="flex-1">{label}</span>
+      <span className="flex-1 text-ink-secondary">{label}</span>
       <input
         type="checkbox"
         checked={checked}
@@ -489,11 +531,16 @@ function LeverRow({
   value: number;
   onChange: (v: number) => void;
 }) {
+  const dirty = value !== 1;
   return (
-    <div className="mb-3 last:mb-0">
+    <div className="mb-4 last:mb-0">
       <div className="mb-1 flex items-baseline justify-between text-sm">
         <span className="text-ink">{label}</span>
-        <span className="font-mono text-xs text-ink/60">{value.toFixed(2)}×</span>
+        <span
+          className={`font-mono text-xs ${dirty ? "text-accent" : "text-ink-muted"}`}
+        >
+          {value.toFixed(2)}×
+        </span>
       </div>
       <input
         type="range"
@@ -503,7 +550,9 @@ function LeverRow({
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
       />
-      <div className="mt-0.5 text-[11px] text-ink/40">baseline · {baseline}</div>
+      <div className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-muted">
+        baseline · {baseline}
+      </div>
     </div>
   );
 }
@@ -556,11 +605,13 @@ function Stat({
   reform: string | null;
 }) {
   return (
-    <div className="rounded-lg border border-ink/10 bg-white p-4">
-      <div className="text-[11px] uppercase tracking-wide text-ink/50">{label}</div>
-      <div className="mt-1 font-mono text-2xl text-ink">{baseline}</div>
+    <div className="border border-rule bg-paper-elevated p-4">
+      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted">
+        {label}
+      </div>
+      <div className="mt-2 font-mono text-3xl tracking-tight text-ink">{baseline}</div>
       {reform !== null && (
-        <div className="font-mono text-sm text-amber-glow">→ {reform}</div>
+        <div className="mt-1 font-mono text-sm text-accent">→ {reform}</div>
       )}
     </div>
   );
