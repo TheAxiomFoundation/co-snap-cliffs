@@ -43,7 +43,7 @@ export const LEVERS: LeverSpec[] = [
   {
     id: "max_allotment_scale",
     group: "max-allotment",
-    label: "Max allotment (48 states + DC)",
+    label: "Max allotment ($298 / 1-person)",
     description: "Scale every row of the maximum allotment table by household size.",
     baseline_label: "1-person: $298 / mo",
     min_multiplier: 0.5,
@@ -67,9 +67,9 @@ export const LEVERS: LeverSpec[] = [
   {
     id: "standard_deduction_scale",
     group: "deductions",
-    label: "Standard deduction",
+    label: "Standard deduction ($209 / 1–3 person)",
     description: "Scale the SNAP standard deduction table.",
-    baseline_label: "1–3 person: $204 / mo",
+    baseline_label: "1–3 person: $209 / mo",
     min_multiplier: 0,
     max_multiplier: 2,
     step: 0.05,
@@ -139,7 +139,7 @@ export const LEVERS: LeverSpec[] = [
   {
     id: "co_bbce_limit_scale",
     group: "bbce",
-    label: "Colorado BBCE gross-income limit",
+    label: "Colorado BBCE limit (200% FPL)",
     description: "Scale Colorado's expanded categorical-eligibility gross-income limit.",
     baseline_label: "200% FPL",
     min_multiplier: 0.5,

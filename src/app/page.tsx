@@ -145,23 +145,11 @@ export default function Page() {
             <h1 className="text-2xl font-bold tracking-[-0.03em] text-ink">
               CO&nbsp;SNAP&nbsp;cliffs
             </h1>
-            <p className="mt-0.5 text-[12px] leading-snug text-ink-secondary">
-              Live computes against{" "}
-              <code className="font-mono text-[11px] text-accent">axiom-rules-engine</code> —
-              no model recall, no PolicyEngine.
-            </p>
           </div>
         </div>
-        <div className="shrink-0 font-mono text-[11px] text-ink-muted">
-          {loading
-            ? "computing…"
-            : baseline && (
-                <>
-                  baseline {baseline.ms}&thinsp;ms
-                  {reform && <> · reform {reform.ms}&thinsp;ms</>}
-                </>
-              )}
-        </div>
+        {loading && (
+          <div className="shrink-0 font-mono text-[11px] text-ink-muted">computing…</div>
+        )}
       </header>
 
       {err && (
@@ -271,9 +259,7 @@ export default function Page() {
           </CompactCard>
         </aside>
 
-        <section className="col-span-12 space-y-6 md:col-span-8">
-          <Summary baseline={baseline} reform={reform} reformDirty={reformDirty} />
-
+        <section className="col-span-12 space-y-3 md:col-span-8">
           <CliffChart
             title="Net resources vs earnings"
             eyebrow="§ I · earnings + SNAP allotment"
@@ -326,15 +312,15 @@ function Card({
   eyebrow?: string;
 }) {
   return (
-    <section className="border border-rule bg-paper-elevated p-5">
-      {eyebrow && (
-        <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-muted">
-          {eyebrow}
-        </div>
-      )}
-      <h2 className="mb-4 border-b border-rule pb-3 text-base font-bold tracking-[-0.02em] text-ink">
-        {title}
-      </h2>
+    <section className="border border-rule bg-paper-elevated px-3 py-2.5">
+      <div className="mb-2 flex items-baseline justify-between gap-3 border-b border-rule pb-1.5">
+        <h2 className="text-[13px] font-bold tracking-[-0.01em] text-ink">{title}</h2>
+        {eyebrow && (
+          <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-ink-muted">
+            {eyebrow}
+          </span>
+        )}
+      </div>
       {children}
     </section>
   );
@@ -504,7 +490,7 @@ function CliffChart({
   return (
     <Card title={title} eyebrow={eyebrow}>
       <ChartLegend reformDirty={reformDirty} />
-      <div style={{ width: "100%", height: 260 }}>
+      <div style={{ width: "100%", height: 210 }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 8, right: 18, bottom: 28, left: 6 }}>
             <defs>
@@ -690,62 +676,3 @@ function TooltipCard({
   );
 }
 
-function Summary({
-  baseline,
-  reform,
-  reformDirty,
-}: {
-  baseline: SweepResult | null;
-  reform: SweepResult | null;
-  reformDirty: boolean;
-}) {
-  if (!baseline) return null;
-  const b = baseline.summary;
-  const r = reform?.summary;
-  return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-      <Stat
-        label="Cliffs (MTR ≥ 100%)"
-        baseline={b.cliff_count.toString()}
-        reform={reformDirty && r ? r.cliff_count.toString() : null}
-      />
-      <Stat
-        label="Max MTR"
-        baseline={`${(b.max_mtr * 100).toFixed(0)}%`}
-        reform={reformDirty && r ? `${(r.max_mtr * 100).toFixed(0)}%` : null}
-      />
-      <Stat
-        label="Cliff share"
-        baseline={`${(b.cliff_share * 100).toFixed(0)}%`}
-        reform={reformDirty && r ? `${(r.cliff_share * 100).toFixed(0)}%` : null}
-      />
-      <Stat
-        label="SNAP at $0 earnings"
-        baseline={`$${b.total_snap_at_zero_earnings}`}
-        reform={reformDirty && r ? `$${r.total_snap_at_zero_earnings}` : null}
-      />
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  baseline,
-  reform,
-}: {
-  label: string;
-  baseline: string;
-  reform: string | null;
-}) {
-  return (
-    <div className="border border-rule bg-paper-elevated p-4">
-      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted">
-        {label}
-      </div>
-      <div className="mt-2 font-mono text-3xl tracking-tight text-ink">{baseline}</div>
-      {reform !== null && (
-        <div className="mt-1 font-mono text-sm text-accent">→ {reform}</div>
-      )}
-    </div>
-  );
-}
