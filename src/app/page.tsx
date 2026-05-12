@@ -127,38 +127,32 @@ export default function Page() {
   }, [baseline, reform]);
 
   return (
-    <main className="relative z-10 mx-auto max-w-7xl px-6 pb-16 pt-10">
-      <nav className="mb-12 flex items-center gap-3">
-        <a href="https://axiomfoundation.org" className="inline-flex w-[132px] no-underline">
-          <img
-            src="/axiom-foundation.svg"
-            alt="Axiom Foundation"
-            width={132}
-            className="block w-full h-auto"
-          />
-        </a>
-        <span className="ml-2 text-xs uppercase tracking-[0.18em] text-ink-muted">
-          / co snap cliffs
-        </span>
-      </nav>
-
-      <header className="mb-10 flex items-end justify-between border-b border-rule pb-6">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.22em] text-ink-muted">
-            Interactive · Colorado Department of Human Services · SNAP FY 2026
+    <main className="relative z-10 mx-auto max-w-7xl px-6 pb-12 pt-5">
+      <header className="mb-6 flex items-end justify-between gap-6 border-b border-rule pb-4">
+        <div className="flex items-center gap-4">
+          <a href="https://axiomfoundation.org" className="inline-flex w-[108px] shrink-0 no-underline">
+            <img
+              src="/axiom-foundation.svg"
+              alt="Axiom Foundation"
+              width={108}
+              className="block h-auto w-full"
+            />
+          </a>
+          <div className="border-l border-rule pl-4">
+            <div className="text-[10px] uppercase tracking-[0.22em] text-ink-muted">
+              Interactive · CDHS SNAP FY 2026
+            </div>
+            <h1 className="text-2xl font-bold tracking-[-0.03em] text-ink">
+              CO&nbsp;SNAP&nbsp;cliffs
+            </h1>
+            <p className="mt-0.5 text-[12px] leading-snug text-ink-secondary">
+              Live computes against{" "}
+              <code className="font-mono text-[11px] text-accent">axiom-rules-engine</code> —
+              no model recall, no PolicyEngine.
+            </p>
           </div>
-          <h1 className="mt-2 text-4xl font-bold tracking-[-0.04em] text-ink">
-            CO&nbsp;SNAP&nbsp;cliffs
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-secondary">
-            Adjust Colorado SNAP policy levers and watch the benefit-cliff
-            structure change in real time. Every dollar comes from a live
-            compute against <code className="font-mono text-[12px] text-accent">axiom-rules-engine</code>{" "}
-            executing the encoded CO SNAP composition — no model recall, no
-            PolicyEngine.
-          </p>
         </div>
-        <div className="font-mono text-[11px] text-ink-muted">
+        <div className="shrink-0 font-mono text-[11px] text-ink-muted">
           {loading
             ? "computing…"
             : baseline && (
@@ -176,113 +170,105 @@ export default function Page() {
         </div>
       )}
 
-      <div className="grid grid-cols-12 gap-8">
-        <aside className="col-span-12 space-y-6 md:col-span-4">
-          <Card title="Household">
-            <NumberRow
-              label="Household size"
-              value={household.household_size}
-              min={1}
-              max={8}
-              step={1}
-              onChange={(v) => setHousehold({ ...household, household_size: v })}
-            />
-            <NumberRow
-              label="Oldest member age"
-              value={household.oldest_member_age}
-              min={0}
-              max={100}
-              step={1}
-              onChange={(v) => setHousehold({ ...household, oldest_member_age: v })}
-            />
-            <NumberRow
-              label="Monthly shelter costs ($)"
-              value={household.monthly_shelter_costs}
-              min={0}
-              max={3000}
-              step={50}
-              onChange={(v) => setHousehold({ ...household, monthly_shelter_costs: v })}
-            />
-            <NumberRow
-              label="Liquid resources ($)"
-              value={household.liquid_resources}
-              min={0}
-              max={5000}
-              step={100}
-              onChange={(v) => setHousehold({ ...household, liquid_resources: v })}
-            />
-            <CheckRow
-              label="Pays separate heating/cooling"
-              checked={household.pays_separate_heating_or_cooling}
-              onChange={(v) =>
-                setHousehold({ ...household, pays_separate_heating_or_cooling: v })
-              }
-            />
-            <CheckRow
-              label="Any elderly or disabled member"
-              checked={household.any_member_elderly_or_disabled}
-              onChange={(v) =>
-                setHousehold({ ...household, any_member_elderly_or_disabled: v })
-              }
-            />
-          </Card>
-
-          <Card title="Sweep range">
-            <NumberRow
-              label="Earnings max ($/mo)"
-              value={earningsMax}
-              min={1000}
-              max={10000}
-              step={500}
-              onChange={setEarningsMax}
-            />
-            <NumberRow
-              label="Step ($)"
-              value={step}
-              min={25}
-              max={500}
-              step={25}
-              onChange={setStep}
-            />
-          </Card>
-
-          <Card title="Reform parameters">
-            <p className="-mt-2 mb-4 text-xs leading-relaxed text-ink-secondary">
-              <span className="font-mono text-accent">1.00×</span> is current
-              law. Drag to scale baseline values; the engine recompiles in&nbsp;~70&thinsp;ms.
-            </p>
-            <div className="space-y-4">
-              {(["income-limits", "max-allotment", "deductions", "bbce"] as const).map(
-                (group) => (
-                  <div key={group}>
-                    <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-muted">
-                      § {group.replace(/-/g, " ")}
-                    </div>
-                    {LEVERS.filter((l) => l.group === group).map((lever) => (
-                      <LeverRow
-                        key={lever.id}
-                        label={lever.label}
-                        baseline={lever.baseline_label}
-                        min={lever.min_multiplier}
-                        max={lever.max_multiplier}
-                        step={lever.step}
-                        value={reformMultipliers[lever.id]}
-                        onChange={(v) =>
-                          setReformMultipliers({ ...reformMultipliers, [lever.id]: v })
-                        }
-                      />
-                    ))}
-                  </div>
-                ),
-              )}
+      <div className="grid grid-cols-12 items-start gap-8">
+        <aside className="col-span-12 space-y-4 md:sticky md:top-6 md:col-span-4 md:self-start">
+          <CompactCard title="Household & sweep">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+              <CompactNumberRow
+                label="Size"
+                value={household.household_size}
+                min={1}
+                max={8}
+                step={1}
+                onChange={(v) => setHousehold({ ...household, household_size: v })}
+              />
+              <CompactNumberRow
+                label="Oldest age"
+                value={household.oldest_member_age}
+                min={0}
+                max={100}
+                step={1}
+                onChange={(v) => setHousehold({ ...household, oldest_member_age: v })}
+              />
+              <CompactNumberRow
+                label="Shelter $/mo"
+                value={household.monthly_shelter_costs}
+                min={0}
+                max={3000}
+                step={50}
+                onChange={(v) => setHousehold({ ...household, monthly_shelter_costs: v })}
+              />
+              <CompactNumberRow
+                label="Resources $"
+                value={household.liquid_resources}
+                min={0}
+                max={5000}
+                step={100}
+                onChange={(v) => setHousehold({ ...household, liquid_resources: v })}
+              />
+              <CompactNumberRow
+                label="Earnings max"
+                value={earningsMax}
+                min={1000}
+                max={10000}
+                step={500}
+                onChange={setEarningsMax}
+              />
+              <CompactNumberRow
+                label="Step $"
+                value={step}
+                min={25}
+                max={500}
+                step={25}
+                onChange={setStep}
+              />
             </div>
-            <button
-              className="mt-6 w-full border border-rule-strong px-3 py-2 text-sm font-medium uppercase tracking-wider text-ink-secondary transition-colors hover:border-accent hover:bg-accent-light hover:text-accent"
-              onClick={() => setReformMultipliers(DEFAULT_MULTIPLIERS())}
-            >
-              Reset to current law
-            </button>
-          </Card>
+            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 border-t border-rule pt-3 text-[12px]">
+              <InlineCheck
+                label="Separate heating/cooling"
+                checked={household.pays_separate_heating_or_cooling}
+                onChange={(v) =>
+                  setHousehold({ ...household, pays_separate_heating_or_cooling: v })
+                }
+              />
+              <InlineCheck
+                label="Elderly/disabled member"
+                checked={household.any_member_elderly_or_disabled}
+                onChange={(v) =>
+                  setHousehold({ ...household, any_member_elderly_or_disabled: v })
+                }
+              />
+            </div>
+          </CompactCard>
+
+          <CompactCard
+            title="Reform parameters"
+            rightSlot={
+              <button
+                className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted underline-offset-2 hover:text-accent hover:underline"
+                onClick={() => setReformMultipliers(DEFAULT_MULTIPLIERS())}
+              >
+                reset
+              </button>
+            }
+          >
+            <div>
+              {LEVERS.map((lever) => (
+                <CompactLeverRow
+                  key={lever.id}
+                  label={lever.label}
+                  baseline={lever.baseline_label}
+                  min={lever.min_multiplier}
+                  max={lever.max_multiplier}
+                  step={lever.step}
+                  value={reformMultipliers[lever.id]}
+                  onChange={(v) =>
+                    setReformMultipliers({ ...reformMultipliers, [lever.id]: v })
+                  }
+                />
+              ))}
+            </div>
+          </CompactCard>
         </aside>
 
         <section className="col-span-12 space-y-6 md:col-span-8">
@@ -351,6 +337,122 @@ function Card({
       </h2>
       {children}
     </section>
+  );
+}
+
+function CompactCard({
+  title,
+  children,
+  rightSlot,
+}: {
+  title: string;
+  children: React.ReactNode;
+  rightSlot?: React.ReactNode;
+}) {
+  return (
+    <section className="border border-rule bg-paper-elevated p-3">
+      <div className="mb-3 flex items-baseline justify-between border-b border-rule pb-2">
+        <h2 className="text-[13px] font-bold uppercase tracking-[0.12em] text-ink">{title}</h2>
+        {rightSlot}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function CompactNumberRow({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-2 text-[11px]">
+      <span className="truncate text-ink-secondary">{label}</span>
+      <input
+        type="number"
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-[72px] px-1.5 py-0.5 text-right font-mono text-[12px]"
+      />
+    </label>
+  );
+}
+
+function InlineCheck({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 text-ink-secondary">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-3.5 w-3.5"
+      />
+      <span>{label}</span>
+    </label>
+  );
+}
+
+function CompactLeverRow({
+  label,
+  baseline,
+  min,
+  max,
+  step,
+  value,
+  onChange,
+}: {
+  label: string;
+  baseline: string;
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  const dirty = value !== 1;
+  return (
+    <div className="mb-1.5 last:mb-0">
+      <div className="flex items-baseline justify-between gap-2 text-[12px] leading-tight">
+        <span className="truncate text-ink" title={`baseline · ${baseline}`}>
+          {label}
+        </span>
+        <span
+          className={`shrink-0 font-mono text-[11px] ${dirty ? "text-accent" : "text-ink-muted"}`}
+        >
+          {value.toFixed(2)}×
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="!h-[14px]"
+      />
+    </div>
   );
 }
 
@@ -584,102 +686,6 @@ function TooltipCard({
           </span>
         </div>
       ))}
-    </div>
-  );
-}
-
-function NumberRow({
-  label,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <label className="mb-3 flex items-center justify-between gap-3 text-sm last:mb-0">
-      <span className="flex-1 text-ink-secondary">{label}</span>
-      <input
-        type="number"
-        value={value}
-        min={min}
-        max={max}
-        step={step}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-24 px-2 py-1 text-right font-mono text-sm"
-      />
-    </label>
-  );
-}
-
-function CheckRow({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <label className="mb-3 flex items-center justify-between gap-3 text-sm last:mb-0">
-      <span className="flex-1 text-ink-secondary">{label}</span>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4"
-      />
-    </label>
-  );
-}
-
-function LeverRow({
-  label,
-  baseline,
-  min,
-  max,
-  step,
-  value,
-  onChange,
-}: {
-  label: string;
-  baseline: string;
-  min: number;
-  max: number;
-  step: number;
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  const dirty = value !== 1;
-  return (
-    <div className="mb-4 last:mb-0">
-      <div className="mb-1 flex items-baseline justify-between text-sm">
-        <span className="text-ink">{label}</span>
-        <span
-          className={`font-mono text-xs ${dirty ? "text-accent" : "text-ink-muted"}`}
-        >
-          {value.toFixed(2)}×
-        </span>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-      />
-      <div className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-muted">
-        baseline · {baseline}
-      </div>
     </div>
   );
 }
