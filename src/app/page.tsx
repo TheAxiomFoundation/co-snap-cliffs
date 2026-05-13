@@ -289,7 +289,7 @@ export default function Page() {
                 onChange={(v) => setHousehold({ ...household, oldest_member_age: v })}
               />
               <RoomyNumberRow
-                label="Shelter cost"
+                label="Monthly shelter cost"
                 suffix="$ / mo"
                 hint="Rent or mortgage plus property tax + insurance. Combined with the utility allowance, drives the excess-shelter deduction once shelter exceeds half of net income."
                 value={household.monthly_shelter_costs}
