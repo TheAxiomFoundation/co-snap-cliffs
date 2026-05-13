@@ -442,13 +442,16 @@ function Card({
   title,
   children,
   eyebrow,
+  computing,
 }: {
   title: string;
   children: React.ReactNode;
   eyebrow?: string;
+  computing?: boolean;
 }) {
   return (
-    <section className="border border-rule bg-paper-elevated px-3 py-2.5">
+    <section className="relative overflow-hidden border border-rule bg-paper-elevated px-3 py-2.5">
+      {computing && <div className="computing-bar" aria-hidden />}
       <div className="mb-2 flex items-baseline justify-between gap-3 border-b border-rule pb-1.5">
         <h2 className="text-[13px] font-bold tracking-[-0.01em] text-ink">{title}</h2>
         {eyebrow && (
@@ -645,7 +648,7 @@ function CliffChart({
 }) {
   const initialLoading = loading && data.length === 0;
   return (
-    <Card title={title} eyebrow={eyebrow}>
+    <Card title={title} eyebrow={eyebrow} computing={loading && data.length > 0}>
       <ChartLegend reformDirty={reformDirty} />
       <div className="relative" style={{ width: "100%", height: 210 }}>
         {initialLoading && (
