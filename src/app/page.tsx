@@ -5,7 +5,9 @@ import {
   Area,
   ComposedChart,
   CartesianGrid,
+  LabelList,
   Line,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -41,7 +43,16 @@ const DEFAULT_MULTIPLIERS = (): Record<string, number> =>
 
 export default function Page() {
   const [household, setHousehold] = useState<Household>(DEFAULT_HH);
+  // Two slider buckets:
+  //   `reformMultipliers` is what the user is currently holding (cheap,
+  //   updates on every onChange tick — drives the sliders themselves).
+  //   `appliedMultipliers` is what's actually been sent to the engine and
+  //   reflected on the charts. The Run button promotes pending → applied;
+  //   the engine refetch keys off appliedMultipliers.
   const [reformMultipliers, setReformMultipliers] = useState<Record<string, number>>(
+    DEFAULT_MULTIPLIERS,
+  );
+  const [appliedMultipliers, setAppliedMultipliers] = useState<Record<string, number>>(
     DEFAULT_MULTIPLIERS,
   );
   const [earningsMax, setEarningsMax] = useState(4000);
@@ -68,9 +79,19 @@ export default function Page() {
   // ones).
   const inflightRef = useRef(new Map<string, Promise<SweepResult>>());
 
+  // Chart overlay reflects what's been applied, not what's pending. So
+  // `reformDirty` is computed off applied state — same semantics as before
+  // the Run button existed.
   const reformDirty = useMemo(
-    () => LEVERS.some((l) => reformMultipliers[l.id] !== 1),
-    [reformMultipliers],
+    () => LEVERS.some((l) => appliedMultipliers[l.id] !== 1),
+    [appliedMultipliers],
+  );
+
+  // `pendingChanges` is the count of levers whose current slider value
+  // differs from what's been applied. Drives the Run button enable state.
+  const pendingChanges = useMemo(
+    () => LEVERS.filter((l) => reformMultipliers[l.id] !== appliedMultipliers[l.id]).length,
+    [reformMultipliers, appliedMultipliers],
   );
 
   function requestSignature(multipliers: Record<string, number>): string {
@@ -130,8 +151,8 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [household, earningsMax, step]);
 
-  // Reform depends on multipliers as well. Skip the fetch entirely when no
-  // lever has moved off 1.00× — there's nothing different from baseline.
+  // Reform fires on `appliedMultipliers` — slider drags don't trigger
+  // refetches; only clicking Run does (via setAppliedMultipliers).
   useEffect(() => {
     if (reformTimer.current) window.clearTimeout(reformTimer.current);
     if (!reformDirty) {
@@ -142,15 +163,15 @@ export default function Page() {
       startLoad();
       setErr(null);
       try {
-        setReform(await fetchSweep(reformMultipliers));
+        setReform(await fetchSweep(appliedMultipliers));
       } catch (e) {
         setErr((e as Error).message);
       } finally {
         endLoad();
       }
-    }, 200);
+    }, 50);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [household, earningsMax, step, reformMultipliers, reformDirty]);
+  }, [household, earningsMax, step, appliedMultipliers, reformDirty]);
 
   // `run` is the retry handler the error banner button calls.
   function run() {
@@ -164,7 +185,7 @@ export default function Page() {
       try {
         const b = await fetchSweep(DEFAULT_MULTIPLIERS());
         setBaseline(b);
-        if (reformDirty) setReform(await fetchSweep(reformMultipliers));
+        if (reformDirty) setReform(await fetchSweep(appliedMultipliers));
       } catch (e) {
         setErr((e as Error).message);
       } finally {
@@ -249,67 +270,79 @@ export default function Page() {
 
       <div className="grid grid-cols-12 items-start gap-8">
         <aside className="col-span-12 space-y-4 md:sticky md:top-6 md:col-span-4 md:self-start">
-          <CompactCard title="Household & sweep">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-              <CompactNumberRow
-                label="Size"
+          <CompactCard
+            title="Household"
+            rightSlot={
+              <button
+                className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted underline-offset-2 hover:text-accent hover:underline disabled:opacity-40 disabled:no-underline disabled:hover:text-ink-muted"
+                onClick={() => setHousehold(DEFAULT_HH)}
+                disabled={
+                  household.household_size === DEFAULT_HH.household_size &&
+                  household.oldest_member_age === DEFAULT_HH.oldest_member_age &&
+                  household.monthly_shelter_costs === DEFAULT_HH.monthly_shelter_costs &&
+                  household.liquid_resources === DEFAULT_HH.liquid_resources &&
+                  household.pays_separate_heating_or_cooling ===
+                    DEFAULT_HH.pays_separate_heating_or_cooling &&
+                  household.any_member_elderly_or_disabled ===
+                    DEFAULT_HH.any_member_elderly_or_disabled
+                }
+              >
+                reset
+              </button>
+            }
+          >
+            <div className="space-y-2.5">
+              <RoomyNumberRow
+                label="Household size"
+                hint="Number of people in the SNAP unit. Sets which row of the per-size benefit tables (max allotment, deduction, income limits) applies."
                 value={household.household_size}
                 min={1}
                 max={8}
                 step={1}
                 onChange={(v) => setHousehold({ ...household, household_size: v })}
               />
-              <CompactNumberRow
-                label="Oldest age"
+              <RoomyNumberRow
+                label="Oldest member age"
+                hint="Age of the oldest household member. 60+ qualifies as elderly under 7 USC 2012, which unlocks the medical-expense deduction and a separate income test path."
                 value={household.oldest_member_age}
                 min={0}
                 max={100}
                 step={1}
                 onChange={(v) => setHousehold({ ...household, oldest_member_age: v })}
               />
-              <CompactNumberRow
-                label="Shelter $/mo"
+              <RoomyNumberRow
+                label="Monthly shelter cost"
+                prefix="$"
+                hint="Rent or mortgage plus property tax + insurance. Combined with the utility allowance, drives the excess-shelter deduction once shelter exceeds half of net income."
                 value={household.monthly_shelter_costs}
                 min={0}
                 max={3000}
                 step={50}
                 onChange={(v) => setHousehold({ ...household, monthly_shelter_costs: v })}
               />
-              <CompactNumberRow
-                label="Resources $"
+              <RoomyNumberRow
+                label="Liquid resources"
+                prefix="$"
+                hint="Cash + bank account balances. Households above the federal resource limit lose SNAP eligibility entirely — a cliff that's separate from income."
                 value={household.liquid_resources}
                 min={0}
                 max={5000}
                 step={100}
                 onChange={(v) => setHousehold({ ...household, liquid_resources: v })}
               />
-              <CompactNumberRow
-                label="Earnings max"
-                value={earningsMax}
-                min={1000}
-                max={10000}
-                step={500}
-                onChange={setEarningsMax}
-              />
-              <CompactNumberRow
-                label="Step $"
-                value={step}
-                min={25}
-                max={500}
-                step={25}
-                onChange={setStep}
-              />
             </div>
-            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 border-t border-rule pt-3 text-[12px]">
-              <InlineCheck
-                label="Separate heating/cooling"
+            <div className="mt-3 space-y-2 border-t border-rule pt-3">
+              <RoomyCheck
+                label="Separate heating or cooling expense"
+                hint="Triggers the largest Standard Utility Allowance ($571 / mo in Colorado FY 2026), which feeds the excess-shelter deduction."
                 checked={household.pays_separate_heating_or_cooling}
                 onChange={(v) =>
                   setHousehold({ ...household, pays_separate_heating_or_cooling: v })
                 }
               />
-              <InlineCheck
-                label="Elderly/disabled member"
+              <RoomyCheck
+                label="Elderly or disabled member"
+                hint="Removes the gross-income test and uncaps the excess-shelter deduction — usually a big SNAP boost for qualifying households."
                 checked={household.any_member_elderly_or_disabled}
                 onChange={(v) =>
                   setHousehold({ ...household, any_member_elderly_or_disabled: v })
@@ -318,12 +351,44 @@ export default function Page() {
             </div>
           </CompactCard>
 
+          <CompactCard title="Earnings sweep">
+            <div className="space-y-2.5">
+              <RoomyNumberRow
+                label="Max earnings"
+                prefix="$"
+                hint="Upper bound of the income range we sweep across. Pick high enough to clear the gross-income limit so you see the full phase-out."
+                value={earningsMax}
+                min={1000}
+                max={10000}
+                step={500}
+                onChange={setEarningsMax}
+              />
+              <RoomyNumberRow
+                label="Sweep step"
+                prefix="$"
+                hint="Resolution of the sweep — smaller steps mean smoother curves but slightly more compute per click."
+                value={step}
+                min={25}
+                max={500}
+                step={25}
+                onChange={setStep}
+              />
+            </div>
+          </CompactCard>
+
           <CompactCard
             title="Reform parameters"
             rightSlot={
               <button
-                className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted underline-offset-2 hover:text-accent hover:underline"
-                onClick={() => setReformMultipliers(DEFAULT_MULTIPLIERS())}
+                className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted underline-offset-2 hover:text-accent hover:underline disabled:opacity-40 disabled:no-underline disabled:hover:text-ink-muted"
+                onClick={() => {
+                  setReformMultipliers(DEFAULT_MULTIPLIERS());
+                  setAppliedMultipliers(DEFAULT_MULTIPLIERS());
+                }}
+                disabled={
+                  !reformDirty &&
+                  LEVERS.every((l) => reformMultipliers[l.id] === 1)
+                }
               >
                 reset
               </button>
@@ -335,16 +400,25 @@ export default function Page() {
                   key={lever.id}
                   label={lever.label}
                   baseline={lever.baseline_label}
+                  hint={lever.description}
                   min={lever.min_multiplier}
                   max={lever.max_multiplier}
                   step={lever.step}
                   value={reformMultipliers[lever.id]}
+                  applied={appliedMultipliers[lever.id]}
                   onChange={(v) =>
                     setReformMultipliers({ ...reformMultipliers, [lever.id]: v })
                   }
                 />
               ))}
             </div>
+            <button
+              onClick={() => setAppliedMultipliers(reformMultipliers)}
+              disabled={pendingChanges === 0 || loading}
+              className="mt-3 flex w-full items-center justify-center gap-2 border border-accent bg-accent px-3 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-paper-elevated transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:border-rule disabled:bg-rule-subtle disabled:text-ink-muted"
+            >
+              Run reform
+            </button>
           </CompactCard>
         </aside>
 
@@ -398,15 +472,28 @@ function Card({
   title,
   children,
   eyebrow,
+  computing,
+  yUnit,
 }: {
   title: string;
   children: React.ReactNode;
   eyebrow?: string;
+  computing?: boolean;
+  /** Small-caps axis-unit annotation rendered next to the title. */
+  yUnit?: string;
 }) {
   return (
-    <section className="border border-rule bg-paper-elevated px-3 py-2.5">
+    <section className="relative border border-rule bg-paper-elevated px-3 py-2.5">
+      {computing && <div className="computing-bar" aria-hidden />}
       <div className="mb-2 flex items-baseline justify-between gap-3 border-b border-rule pb-1.5">
-        <h2 className="text-[13px] font-bold tracking-[-0.01em] text-ink">{title}</h2>
+        <h2 className="flex items-baseline gap-2 text-[13px] font-bold tracking-[-0.01em] text-ink">
+          {title}
+          {yUnit && (
+            <span className="font-mono text-[9px] font-normal uppercase tracking-[0.22em] text-ink-muted">
+              · {yUnit.replace(/\s+/g, " ")}
+            </span>
+          )}
+        </h2>
         {eyebrow && (
           <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-ink-muted">
             {eyebrow}
@@ -438,8 +525,25 @@ function CompactCard({
   );
 }
 
-function CompactNumberRow({
+function Tip({ text }: { text: string }) {
+  // Small ⓘ glyph with a CSS-only hover tooltip. Z-index high so it floats
+  // over chart cards; positioned above the trigger so it doesn't push layout.
+  return (
+    <span className="group/tip relative inline-flex items-center">
+      <span className="flex h-3.5 w-3.5 cursor-help select-none items-center justify-center rounded-full border border-rule-strong text-[8px] font-bold text-ink-muted transition-colors group-hover/tip:border-accent group-hover/tip:text-accent">
+        i
+      </span>
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden w-60 -translate-x-1/2 border border-rule bg-paper-elevated px-3 py-2 text-[11px] leading-snug text-ink-secondary shadow-md group-hover/tip:block">
+        {text}
+      </span>
+    </span>
+  );
+}
+
+function RoomyNumberRow({
   label,
+  hint,
+  prefix,
   value,
   min,
   max,
@@ -447,6 +551,9 @@ function CompactNumberRow({
   onChange,
 }: {
   label: string;
+  hint?: string;
+  /** Visual prefix shown inside the input box (e.g. "$"). */
+  prefix?: string;
   value: number;
   min: number;
   max: number;
@@ -454,39 +561,63 @@ function CompactNumberRow({
   onChange: (v: number) => void;
 }) {
   return (
-    <label className="flex items-center justify-between gap-2 text-[11px]">
-      <span className="truncate text-ink-secondary">{label}</span>
-      <input
-        type="number"
-        value={value}
-        min={min}
-        max={max}
-        step={step}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-[72px] px-1.5 py-0.5 text-right font-mono text-[12px]"
-      />
+    <label className="flex items-center justify-between gap-2">
+      <span className="flex items-center gap-1.5 text-[12px] text-ink-secondary">
+        {label}
+        {hint && <Tip text={hint} />}
+      </span>
+      <span className="relative inline-block">
+        {prefix && (
+          <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 font-mono text-[11px] text-ink-muted">
+            {prefix}
+          </span>
+        )}
+        <input
+          type="number"
+          value={value}
+          min={min}
+          max={max}
+          step={step}
+          onChange={(e) => {
+            const raw = Number(e.target.value);
+            if (!Number.isFinite(raw)) return;
+            // Clamp to the declared bounds so the API never sees out-of-range
+            // values. Without this, browser type=number lets the user type
+            // anything; the request hits Zod and 400s.
+            onChange(Math.max(min, Math.min(max, raw)));
+          }}
+          className={`w-[88px] py-0.5 pr-1.5 text-right font-mono text-[12px] ${
+            prefix ? "pl-5" : "pl-1.5"
+          }`}
+        />
+      </span>
     </label>
   );
 }
 
-function InlineCheck({
+function RoomyCheck({
   label,
+  hint,
   checked,
   onChange,
 }: {
   label: string;
+  hint?: string;
   checked: boolean;
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-1.5 text-ink-secondary">
+    <label className="flex items-center justify-between gap-2 text-[12px]">
+      <span className="flex items-center gap-1.5 text-ink-secondary">
+        {label}
+        {hint && <Tip text={hint} />}
+      </span>
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
         className="h-3.5 w-3.5"
       />
-      <span>{label}</span>
     </label>
   );
 }
@@ -494,31 +625,44 @@ function InlineCheck({
 function CompactLeverRow({
   label,
   baseline,
+  hint,
   min,
   max,
   step,
   value,
+  applied,
   onChange,
 }: {
   label: string;
   baseline: string;
+  hint?: string;
   min: number;
   max: number;
   step: number;
   value: number;
+  applied: number;
   onChange: (v: number) => void;
 }) {
   const dirty = value !== 1;
+  const pending = value !== applied;
   return (
     <div className="mb-1.5 last:mb-0">
       <div className="flex items-baseline justify-between gap-2 text-[12px] leading-tight">
-        <span className="truncate text-ink" title={`baseline · ${baseline}`}>
-          {label}
+        <span className="flex min-w-0 items-center gap-1.5 truncate text-ink">
+          <span className="truncate" title={`baseline · ${baseline}`}>
+            {label}
+          </span>
+          {hint && <Tip text={hint} />}
         </span>
         <span
-          className={`shrink-0 font-mono text-[11px] ${dirty ? "text-accent" : "text-ink-muted"}`}
+          className={`shrink-0 font-mono text-[11px] ${
+            pending ? "text-accent" : dirty ? "text-accent/70" : "text-ink-muted"
+          }`}
         >
           {value.toFixed(2)}×
+          {pending && (
+            <span className="ml-1 text-[9px] uppercase tracking-wider">pending</span>
+          )}
         </span>
       </div>
       <input
@@ -547,6 +691,9 @@ const percent = (v: number): string => `${v.toFixed(0)}%`;
 function friendlyError(raw: string): string {
   if (/504|FUNCTION_INVOCATION_TIMEOUT|timed?\s*out/i.test(raw)) {
     return "The compute engine took too long to respond. It's probably warming up — try again in a few seconds.";
+  }
+  if (/\b400\b|invalid request|too_big|too_small|expected/i.test(raw)) {
+    return "One of the inputs is out of range. Adjust the offending field and try again.";
   }
   if (/5\d\d/.test(raw)) {
     return "The compute engine returned an error.";
@@ -592,10 +739,21 @@ function CliffChart({
   loading?: boolean;
 }) {
   const initialLoading = loading && data.length === 0;
+  const lastIdx = data.length - 1;
+  const xMax = lastIdx >= 0 ? data[lastIdx].earnings : 0;
+  // X-axis tick marks at round $1000 intervals — the auto ticks land on odd
+  // numbers as the sweep range varies.
+  const xTicks: number[] = [];
+  for (let v = 0; v <= xMax; v += 1000) xTicks.push(v);
+
   return (
-    <Card title={title} eyebrow={eyebrow}>
-      <ChartLegend reformDirty={reformDirty} />
-      <div className="relative" style={{ width: "100%", height: 210 }}>
+    <Card
+      title={title}
+      eyebrow={eyebrow}
+      computing={loading && data.length > 0}
+      yUnit={yLabel}
+    >
+      <div className="relative" style={{ width: "100%", height: 220 }}>
         {initialLoading && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-paper-elevated/90">
             <Spinner />
@@ -604,22 +762,38 @@ function CliffChart({
             </div>
           </div>
         )}
+        <CornerBrackets />
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 8, right: 18, bottom: 28, left: 6 }}>
+          <ComposedChart
+            data={data}
+            margin={{ top: 14, right: 78, bottom: 28, left: 14 }}
+          >
             <defs>
               <linearGradient id="delta-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={ACCENT} stopOpacity={0.18} />
+                <stop offset="0%" stopColor={ACCENT} stopOpacity={0.16} />
                 <stop offset="100%" stopColor={ACCENT} stopOpacity={0.02} />
               </linearGradient>
+              <pattern
+                id="cliff-hatch"
+                width="6"
+                height="6"
+                patternUnits="userSpaceOnUse"
+                patternTransform="rotate(45)"
+              >
+                <line x1="0" y1="0" x2="0" y2="6" stroke={ERROR} strokeWidth="1" strokeOpacity="0.18" />
+              </pattern>
             </defs>
-            <CartesianGrid stroke={RULE} strokeDasharray="2 4" vertical={false} />
+            <CartesianGrid stroke={RULE} strokeDasharray="1 4" vertical={false} />
             <XAxis
               dataKey="earnings"
+              type="number"
+              domain={[0, xMax]}
+              ticks={xTicks}
               tickFormatter={dollars}
               stroke={RULE_STRONG}
-              strokeWidth={1}
+              strokeWidth={0.5}
               tick={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, fill: RULE_STRONG }}
-              tickLine={{ stroke: RULE_STRONG }}
+              tickLine={false}
               label={{
                 value: "MONTHLY EARNINGS",
                 position: "bottom",
@@ -635,14 +809,44 @@ function CliffChart({
             <YAxis
               tickFormatter={yFormat}
               stroke={RULE_STRONG}
-              strokeWidth={1}
+              strokeWidth={0.5}
               tick={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, fill: RULE_STRONG }}
-              tickLine={{ stroke: RULE_STRONG }}
-              width={56}
+              tickLine={false}
+              width={48}
               domain={[0, "auto"]}
             />
+            {/* Cliff zone shading — only on the MTR chart, where the reference
+                line is set to 100%. The hatched red rectangle visually
+                screams "anything in here is a cliff." */}
+            {referenceLine && (
+              <ReferenceArea
+                y1={referenceLine.y}
+                y2={Number.MAX_SAFE_INTEGER}
+                fill="url(#cliff-hatch)"
+                fillOpacity={1}
+                stroke="none"
+                ifOverflow="extendDomain"
+              />
+            )}
+            {referenceLine && (
+              <ReferenceLine
+                y={referenceLine.y}
+                stroke={ERROR}
+                strokeDasharray="3 3"
+                strokeWidth={0.75}
+                label={{
+                  value: referenceLine.label.toUpperCase(),
+                  position: "insideTopRight",
+                  fill: ERROR,
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: 9,
+                  letterSpacing: "0.18em",
+                  offset: 4,
+                }}
+              />
+            )}
             <Tooltip
-              cursor={{ stroke: INK, strokeWidth: 1, strokeDasharray: "2 2" }}
+              cursor={{ stroke: INK, strokeWidth: 0.75, strokeDasharray: "2 3" }}
               content={(props) => (
                 <TooltipCard
                   active={Boolean(props.active)}
@@ -662,22 +866,6 @@ function CliffChart({
                 />
               )}
             />
-            {referenceLine && (
-              <ReferenceLine
-                y={referenceLine.y}
-                stroke={ERROR}
-                strokeDasharray="4 3"
-                strokeWidth={1}
-                label={{
-                  value: referenceLine.label.toUpperCase(),
-                  position: "insideTopRight",
-                  fill: ERROR,
-                  fontFamily: "JetBrains Mono, monospace",
-                  fontSize: 9,
-                  letterSpacing: "0.18em",
-                }}
-              />
-            )}
             <Area
               type="monotone"
               dataKey={reformKey as string}
@@ -701,7 +889,20 @@ function CliffChart({
               isAnimationActive
               animationDuration={350}
               animationEasing="ease-out"
-            />
+            >
+              <LabelList
+                dataKey={baselineKey as string}
+                content={(props) => (
+                  <SeriesEndLabel
+                    {...(props as Record<string, unknown>)}
+                    text="BASELINE"
+                    color={INK}
+                    show={data.length > 0}
+                    isLast={(props as { index?: number }).index === lastIdx}
+                  />
+                )}
+              />
+            </Line>
             <Line
               type="monotone"
               dataKey={reformKey as string}
@@ -719,11 +920,92 @@ function CliffChart({
               isAnimationActive
               animationDuration={350}
               animationEasing="ease-out"
-            />
+            >
+              {reformDirty && (
+                <LabelList
+                  dataKey={reformKey as string}
+                  content={(props) => (
+                    <SeriesEndLabel
+                      {...(props as Record<string, unknown>)}
+                      text="REFORM"
+                      color={ACCENT}
+                      show
+                      isLast={(props as { index?: number }).index === lastIdx}
+                    />
+                  )}
+                />
+              )}
+            </Line>
           </ComposedChart>
         </ResponsiveContainer>
       </div>
     </Card>
+  );
+}
+
+/** Tufte-style direct label on the right edge of the line. Recharts pipes
+ *  this through LabelList with the rendered point coords. We only paint at
+ *  the last data point so it sits at the line's right end. */
+function SeriesEndLabel(props: {
+  x?: number;
+  y?: number;
+  value?: number | null;
+  isLast?: boolean;
+  show?: boolean;
+  text: string;
+  color: string;
+}) {
+  if (!props.isLast || !props.show || props.value == null) return null;
+  const x = typeof props.x === "number" ? props.x : 0;
+  const y = typeof props.y === "number" ? props.y : 0;
+  return (
+    <g>
+      <line
+        x1={x}
+        y1={y}
+        x2={x + 6}
+        y2={y}
+        stroke={props.color}
+        strokeWidth={0.75}
+        strokeOpacity={0.6}
+      />
+      <text
+        x={x + 9}
+        y={y}
+        fill={props.color}
+        fontFamily="JetBrains Mono, monospace"
+        fontSize={9}
+        letterSpacing="0.18em"
+        dominantBaseline="middle"
+      >
+        {props.text}
+      </text>
+    </g>
+  );
+}
+
+/** Small L-shaped tick at each corner of the plot frame. Lives behind the
+ *  ResponsiveContainer with absolute positioning so it sits inside the card
+ *  padding but outside Recharts' margin box. */
+function CornerBrackets() {
+  const stroke = RULE_STRONG;
+  const sw = 1;
+  const len = 8;
+  const inset = 2;
+  return (
+    <svg
+      className="pointer-events-none absolute inset-0 h-full w-full"
+      aria-hidden
+    >
+      <line x1={inset} y1={inset} x2={inset + len} y2={inset} stroke={stroke} strokeWidth={sw} />
+      <line x1={inset} y1={inset} x2={inset} y2={inset + len} stroke={stroke} strokeWidth={sw} />
+      <line x1={`calc(100% - ${inset + len}px)`} y1={inset} x2={`calc(100% - ${inset}px)`} y2={inset} stroke={stroke} strokeWidth={sw} />
+      <line x1={`calc(100% - ${inset}px)`} y1={inset} x2={`calc(100% - ${inset}px)`} y2={inset + len} stroke={stroke} strokeWidth={sw} />
+      <line x1={inset} y1={`calc(100% - ${inset}px)`} x2={inset + len} y2={`calc(100% - ${inset}px)`} stroke={stroke} strokeWidth={sw} />
+      <line x1={inset} y1={`calc(100% - ${inset + len}px)`} x2={inset} y2={`calc(100% - ${inset}px)`} stroke={stroke} strokeWidth={sw} />
+      <line x1={`calc(100% - ${inset + len}px)`} y1={`calc(100% - ${inset}px)`} x2={`calc(100% - ${inset}px)`} y2={`calc(100% - ${inset}px)`} stroke={stroke} strokeWidth={sw} />
+      <line x1={`calc(100% - ${inset}px)`} y1={`calc(100% - ${inset + len}px)`} x2={`calc(100% - ${inset}px)`} y2={`calc(100% - ${inset}px)`} stroke={stroke} strokeWidth={sw} />
+    </svg>
   );
 }
 
@@ -753,28 +1035,6 @@ function Spinner() {
         fill="none"
       />
     </svg>
-  );
-}
-
-function ChartLegend({ reformDirty }: { reformDirty: boolean }) {
-  return (
-    <div className="-mt-1 mb-3 flex items-center gap-5 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-secondary">
-      <span className="flex items-center gap-2">
-        <span className="inline-block h-[2px] w-5 bg-ink" />
-        baseline · current law
-      </span>
-      {reformDirty && (
-        <span className="flex items-center gap-2 text-accent">
-          <span
-            className="inline-block h-[2px] w-5"
-            style={{
-              backgroundImage: `repeating-linear-gradient(90deg, ${ACCENT} 0 4px, transparent 4px 6px)`,
-            }}
-          />
-          reform
-        </span>
-      )}
-    </div>
   );
 }
 
