@@ -27,7 +27,7 @@ import modal
 
 app = modal.App("co-snap-cliffs")
 
-ENGINE_VERSION = "v2-correct-binary-name"
+ENGINE_VERSION = "v3-result-cache"
 
 # Pinned commit SHAs. Match finbot-snap-demo so the compiled-artifact input
 # slots line up with src/lib/programs/co-snap-base.ts (auto-generated from
@@ -85,17 +85,26 @@ def web():
     POST /run    {program, request, overrides?}  → ExecutionResponse
     GET  /health → {ok, programs, engine_version}
     """
+    import hashlib
     import json
     import re
     import shutil
     import subprocess
     import tempfile
+    from collections import OrderedDict
     from pathlib import Path
     from typing import Any
 
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.middleware.cors import CORSMiddleware
     from ruamel.yaml import YAML
+
+    # In-memory LRU result cache. Per-container; the cache survives across
+    # requests as long as Modal keeps the container warm (scaledown_window).
+    # 256 entries × ~5 KB = ~1.3 MB max — trivial. Slider drags that revisit
+    # the same configuration return in <1 ms with no engine call.
+    CACHE_MAX = 256
+    cache: "OrderedDict[str, dict[str, Any]]" = OrderedDict()
 
     BIN = "/opt/axiom-rules-engine/target/release/axiom-rules"
     ARTIFACTS = {slug: f"/opt/artifacts/{slug}.compiled.json" for slug, _ in PROGRAMS}
@@ -235,6 +244,15 @@ def web():
             "engine_version": ENGINE_VERSION,
         }
 
+    def cache_key(program: str, engine_request: dict, overrides: list) -> str:
+        # Canonical JSON so dict-key ordering doesn't matter.
+        material = json.dumps(
+            {"p": program, "r": engine_request, "o": overrides},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
     @api.post("/run")
     async def run(request: Request):
         body = await request.json()
@@ -248,33 +266,44 @@ def web():
         if not isinstance(engine_request, dict):
             raise HTTPException(400, "missing or invalid `request` body")
 
+        key = cache_key(program, engine_request, overrides)
+        hit = cache.get(key)
+        if hit is not None:
+            cache.move_to_end(key)
+            return hit
+
         if not overrides:
-            return run_engine(
+            result = run_engine(
                 [BIN, "run-compiled", "--artifact", ARTIFACTS[program]],
                 json.dumps(engine_request),
             )
-
-        scratch = write_patched_tree(overrides)
-        try:
-            program_yaml = scratch / PROGRAM_REL_BY_SLUG[program]
-            artifact = scratch / f"{program}.compiled.json"
-            compile_proc = subprocess.run(
-                [BIN, "compile", "--program", str(program_yaml), "--output", str(artifact)],
-                text=True,
-                capture_output=True,
-                timeout=30,
-            )
-            if compile_proc.returncode != 0:
-                raise HTTPException(
-                    500,
-                    f"compile failed ({compile_proc.returncode}): "
-                    f"{compile_proc.stderr.strip()}",
+        else:
+            scratch = write_patched_tree(overrides)
+            try:
+                program_yaml = scratch / PROGRAM_REL_BY_SLUG[program]
+                artifact = scratch / f"{program}.compiled.json"
+                compile_proc = subprocess.run(
+                    [BIN, "compile", "--program", str(program_yaml), "--output", str(artifact)],
+                    text=True,
+                    capture_output=True,
+                    timeout=30,
                 )
-            return run_engine(
-                [BIN, "run-compiled", "--artifact", str(artifact)],
-                json.dumps(engine_request),
-            )
-        finally:
-            shutil.rmtree(scratch, ignore_errors=True)
+                if compile_proc.returncode != 0:
+                    raise HTTPException(
+                        500,
+                        f"compile failed ({compile_proc.returncode}): "
+                        f"{compile_proc.stderr.strip()}",
+                    )
+                result = run_engine(
+                    [BIN, "run-compiled", "--artifact", str(artifact)],
+                    json.dumps(engine_request),
+                )
+            finally:
+                shutil.rmtree(scratch, ignore_errors=True)
+
+        cache[key] = result
+        if len(cache) > CACHE_MAX:
+            cache.popitem(last=False)
+        return result
 
     return api
