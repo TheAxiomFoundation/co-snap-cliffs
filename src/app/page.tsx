@@ -41,7 +41,16 @@ const DEFAULT_MULTIPLIERS = (): Record<string, number> =>
 
 export default function Page() {
   const [household, setHousehold] = useState<Household>(DEFAULT_HH);
+  // Two slider buckets:
+  //   `reformMultipliers` is what the user is currently holding (cheap,
+  //   updates on every onChange tick — drives the sliders themselves).
+  //   `appliedMultipliers` is what's actually been sent to the engine and
+  //   reflected on the charts. The Run button promotes pending → applied;
+  //   the engine refetch keys off appliedMultipliers.
   const [reformMultipliers, setReformMultipliers] = useState<Record<string, number>>(
+    DEFAULT_MULTIPLIERS,
+  );
+  const [appliedMultipliers, setAppliedMultipliers] = useState<Record<string, number>>(
     DEFAULT_MULTIPLIERS,
   );
   const [earningsMax, setEarningsMax] = useState(4000);
@@ -68,9 +77,19 @@ export default function Page() {
   // ones).
   const inflightRef = useRef(new Map<string, Promise<SweepResult>>());
 
+  // Chart overlay reflects what's been applied, not what's pending. So
+  // `reformDirty` is computed off applied state — same semantics as before
+  // the Run button existed.
   const reformDirty = useMemo(
-    () => LEVERS.some((l) => reformMultipliers[l.id] !== 1),
-    [reformMultipliers],
+    () => LEVERS.some((l) => appliedMultipliers[l.id] !== 1),
+    [appliedMultipliers],
+  );
+
+  // `pendingChanges` is the count of levers whose current slider value
+  // differs from what's been applied. Drives the Run button enable state.
+  const pendingChanges = useMemo(
+    () => LEVERS.filter((l) => reformMultipliers[l.id] !== appliedMultipliers[l.id]).length,
+    [reformMultipliers, appliedMultipliers],
   );
 
   function requestSignature(multipliers: Record<string, number>): string {
@@ -130,8 +149,8 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [household, earningsMax, step]);
 
-  // Reform depends on multipliers as well. Skip the fetch entirely when no
-  // lever has moved off 1.00× — there's nothing different from baseline.
+  // Reform fires on `appliedMultipliers` — slider drags don't trigger
+  // refetches; only clicking Run does (via setAppliedMultipliers).
   useEffect(() => {
     if (reformTimer.current) window.clearTimeout(reformTimer.current);
     if (!reformDirty) {
@@ -142,15 +161,15 @@ export default function Page() {
       startLoad();
       setErr(null);
       try {
-        setReform(await fetchSweep(reformMultipliers));
+        setReform(await fetchSweep(appliedMultipliers));
       } catch (e) {
         setErr((e as Error).message);
       } finally {
         endLoad();
       }
-    }, 200);
+    }, 50);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [household, earningsMax, step, reformMultipliers, reformDirty]);
+  }, [household, earningsMax, step, appliedMultipliers, reformDirty]);
 
   // `run` is the retry handler the error banner button calls.
   function run() {
@@ -164,7 +183,7 @@ export default function Page() {
       try {
         const b = await fetchSweep(DEFAULT_MULTIPLIERS());
         setBaseline(b);
-        if (reformDirty) setReform(await fetchSweep(reformMultipliers));
+        if (reformDirty) setReform(await fetchSweep(appliedMultipliers));
       } catch (e) {
         setErr((e as Error).message);
       } finally {
@@ -322,8 +341,15 @@ export default function Page() {
             title="Reform parameters"
             rightSlot={
               <button
-                className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted underline-offset-2 hover:text-accent hover:underline"
-                onClick={() => setReformMultipliers(DEFAULT_MULTIPLIERS())}
+                className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted underline-offset-2 hover:text-accent hover:underline disabled:opacity-40 disabled:no-underline disabled:hover:text-ink-muted"
+                onClick={() => {
+                  setReformMultipliers(DEFAULT_MULTIPLIERS());
+                  setAppliedMultipliers(DEFAULT_MULTIPLIERS());
+                }}
+                disabled={
+                  !reformDirty &&
+                  LEVERS.every((l) => reformMultipliers[l.id] === 1)
+                }
               >
                 reset
               </button>
@@ -339,12 +365,30 @@ export default function Page() {
                   max={lever.max_multiplier}
                   step={lever.step}
                   value={reformMultipliers[lever.id]}
+                  applied={appliedMultipliers[lever.id]}
                   onChange={(v) =>
                     setReformMultipliers({ ...reformMultipliers, [lever.id]: v })
                   }
                 />
               ))}
             </div>
+            <button
+              onClick={() => setAppliedMultipliers(reformMultipliers)}
+              disabled={pendingChanges === 0 || loading}
+              className="mt-3 flex w-full items-center justify-center gap-2 border border-accent bg-accent px-3 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-paper-elevated transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:border-rule-strong disabled:bg-transparent disabled:text-ink-muted"
+            >
+              {loading && pendingChanges === 0 ? (
+                <>
+                  <Spinner /> running
+                </>
+              ) : pendingChanges > 0 ? (
+                <>
+                  Run reform · {pendingChanges} pending
+                </>
+              ) : (
+                "Up to date"
+              )}
+            </button>
           </CompactCard>
         </aside>
 
@@ -498,6 +542,7 @@ function CompactLeverRow({
   max,
   step,
   value,
+  applied,
   onChange,
 }: {
   label: string;
@@ -506,9 +551,11 @@ function CompactLeverRow({
   max: number;
   step: number;
   value: number;
+  applied: number;
   onChange: (v: number) => void;
 }) {
   const dirty = value !== 1;
+  const pending = value !== applied;
   return (
     <div className="mb-1.5 last:mb-0">
       <div className="flex items-baseline justify-between gap-2 text-[12px] leading-tight">
@@ -516,9 +563,14 @@ function CompactLeverRow({
           {label}
         </span>
         <span
-          className={`shrink-0 font-mono text-[11px] ${dirty ? "text-accent" : "text-ink-muted"}`}
+          className={`shrink-0 font-mono text-[11px] ${
+            pending ? "text-accent" : dirty ? "text-accent/70" : "text-ink-muted"
+          }`}
         >
           {value.toFixed(2)}×
+          {pending && (
+            <span className="ml-1 text-[9px] uppercase tracking-wider">pending</span>
+          )}
         </span>
       </div>
       <input
