@@ -558,7 +558,14 @@ function RoomyNumberRow({
           min={min}
           max={max}
           step={step}
-          onChange={(e) => onChange(Number(e.target.value))}
+          onChange={(e) => {
+            const raw = Number(e.target.value);
+            if (!Number.isFinite(raw)) return;
+            // Clamp to the declared bounds so the API never sees out-of-range
+            // values. Without this, browser type=number lets the user type
+            // anything; the request hits Zod and 400s.
+            onChange(Math.max(min, Math.min(max, raw)));
+          }}
           className={`w-[88px] py-0.5 pr-1.5 text-right font-mono text-[12px] ${
             prefix ? "pl-5" : "pl-1.5"
           }`}
@@ -664,6 +671,9 @@ const percent = (v: number): string => `${v.toFixed(0)}%`;
 function friendlyError(raw: string): string {
   if (/504|FUNCTION_INVOCATION_TIMEOUT|timed?\s*out/i.test(raw)) {
     return "The compute engine took too long to respond. It's probably warming up — try again in a few seconds.";
+  }
+  if (/\b400\b|invalid request|too_big|too_small|expected/i.test(raw)) {
+    return "One of the inputs is out of range. Adjust the offending field and try again.";
   }
   if (/5\d\d/.test(raw)) {
     return "The compute engine returned an error.";
