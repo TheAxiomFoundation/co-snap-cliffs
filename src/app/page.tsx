@@ -270,7 +270,27 @@ export default function Page() {
 
       <div className="grid grid-cols-12 items-start gap-8">
         <aside className="col-span-12 space-y-4 md:sticky md:top-6 md:col-span-4 md:self-start">
-          <CompactCard title="Household">
+          <CompactCard
+            title="Household"
+            rightSlot={
+              <button
+                className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted underline-offset-2 hover:text-accent hover:underline disabled:opacity-40 disabled:no-underline disabled:hover:text-ink-muted"
+                onClick={() => setHousehold(DEFAULT_HH)}
+                disabled={
+                  household.household_size === DEFAULT_HH.household_size &&
+                  household.oldest_member_age === DEFAULT_HH.oldest_member_age &&
+                  household.monthly_shelter_costs === DEFAULT_HH.monthly_shelter_costs &&
+                  household.liquid_resources === DEFAULT_HH.liquid_resources &&
+                  household.pays_separate_heating_or_cooling ===
+                    DEFAULT_HH.pays_separate_heating_or_cooling &&
+                  household.any_member_elderly_or_disabled ===
+                    DEFAULT_HH.any_member_elderly_or_disabled
+                }
+              >
+                reset
+              </button>
+            }
+          >
             <div className="space-y-2.5">
               <RoomyNumberRow
                 label="Household size"
