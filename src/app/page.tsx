@@ -148,13 +148,27 @@ export default function Page() {
           </div>
         </div>
         {loading && (
-          <div className="shrink-0 font-mono text-[11px] text-ink-muted">computing…</div>
+          <div className="flex shrink-0 items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-muted">
+            <Spinner />
+            computing
+          </div>
         )}
       </header>
 
       {err && (
-        <div className="mb-6 border border-error/40 bg-error/5 px-4 py-3 text-sm text-error">
-          {err}
+        <div className="mb-6 flex items-start justify-between gap-3 border border-error/40 bg-error/5 px-4 py-3 text-sm text-error">
+          <div>
+            <div className="font-medium">{friendlyError(err)}</div>
+            <div className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-error/70">
+              {err}
+            </div>
+          </div>
+          <button
+            onClick={run}
+            className="shrink-0 self-center border border-error/40 px-3 py-1 font-mono text-[11px] uppercase tracking-wider hover:bg-error/10"
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -270,6 +284,7 @@ export default function Page() {
             yFormat={dollars}
             valueFormat={dollars}
             yLabel="$ / month"
+            loading={loading}
           />
 
           <CliffChart
@@ -282,6 +297,7 @@ export default function Page() {
             yFormat={dollars}
             valueFormat={dollars}
             yLabel="$ / month"
+            loading={loading}
           />
 
           <CliffChart
@@ -295,6 +311,7 @@ export default function Page() {
             valueFormat={percent}
             yLabel="%"
             referenceLine={{ y: 100, label: "cliff threshold" }}
+            loading={loading}
           />
         </section>
       </div>
@@ -452,6 +469,16 @@ const dollars = (v: number): string =>
   v < 0 ? `-$${Math.abs(Math.round(v)).toLocaleString()}` : `$${Math.round(v).toLocaleString()}`;
 const percent = (v: number): string => `${v.toFixed(0)}%`;
 
+function friendlyError(raw: string): string {
+  if (/504|FUNCTION_INVOCATION_TIMEOUT|timed?\s*out/i.test(raw)) {
+    return "The compute engine took too long to respond. It's probably warming up — try again in a few seconds.";
+  }
+  if (/5\d\d/.test(raw)) {
+    return "The compute engine returned an error.";
+  }
+  return "Compute failed.";
+}
+
 interface ChartDatum {
   earnings: number;
   baseline_snap: number;
@@ -475,6 +502,7 @@ function CliffChart({
   valueFormat,
   yLabel,
   referenceLine,
+  loading,
 }: {
   title: string;
   eyebrow: string;
@@ -486,11 +514,21 @@ function CliffChart({
   valueFormat: (v: number) => string;
   yLabel: string;
   referenceLine?: { y: number; label: string };
+  loading?: boolean;
 }) {
+  const initialLoading = loading && data.length === 0;
   return (
     <Card title={title} eyebrow={eyebrow}>
       <ChartLegend reformDirty={reformDirty} />
-      <div style={{ width: "100%", height: 210 }}>
+      <div className="relative" style={{ width: "100%", height: 210 }}>
+        {initialLoading && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-paper-elevated/90">
+            <Spinner />
+            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-muted">
+              warming engine
+            </div>
+          </div>
+        )}
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 8, right: 18, bottom: 28, left: 6 }}>
             <defs>
@@ -611,6 +649,35 @@ function CliffChart({
         </ResponsiveContainer>
       </div>
     </Card>
+  );
+}
+
+function Spinner() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="22"
+      height="22"
+      className="animate-spin text-accent"
+      aria-hidden
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeOpacity="0.18"
+        fill="none"
+      />
+      <path
+        d="M21 12a9 9 0 0 0-9-9"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        fill="none"
+      />
+    </svg>
   );
 }
 

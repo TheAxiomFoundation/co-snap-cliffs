@@ -6,6 +6,16 @@ import { buildOverrides } from "@/lib/parameters";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// 60 s headroom for cold-start Modal hits. Trumps vercel.json on Vercel.
+export const maxDuration = 60;
+
+// Fire-and-forget warmup on serverless cold start. Modal scales down after
+// 5 min idle; without this the first user-driven request pays the
+// container-boot cost in serial with the actual compute. The /health probe
+// is the cheapest endpoint Modal exposes; we don't await the result.
+if (process.env.AXIOM_ENGINE_URL) {
+  fetch(`${process.env.AXIOM_ENGINE_URL.replace(/\/$/, "")}/health`).catch(() => {});
+}
 
 const Body = z.object({
   household: z
