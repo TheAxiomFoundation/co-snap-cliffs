@@ -268,71 +268,88 @@ export default function Page() {
 
       <div className="grid grid-cols-12 items-start gap-8">
         <aside className="col-span-12 space-y-4 md:sticky md:top-6 md:col-span-4 md:self-start">
-          <CompactCard title="Household & sweep">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-              <CompactNumberRow
-                label="Size"
+          <CompactCard title="Household">
+            <div className="space-y-2.5">
+              <RoomyNumberRow
+                label="Household size"
+                hint="Number of people in the SNAP unit. Sets which row of the per-size benefit tables (max allotment, deduction, income limits) applies."
                 value={household.household_size}
                 min={1}
                 max={8}
                 step={1}
                 onChange={(v) => setHousehold({ ...household, household_size: v })}
               />
-              <CompactNumberRow
-                label="Oldest age"
+              <RoomyNumberRow
+                label="Oldest member age"
+                hint="Age of the oldest household member. 60+ qualifies as elderly under 7 USC 2012, which unlocks the medical-expense deduction and a separate income test path."
                 value={household.oldest_member_age}
                 min={0}
                 max={100}
                 step={1}
                 onChange={(v) => setHousehold({ ...household, oldest_member_age: v })}
               />
-              <CompactNumberRow
-                label="Shelter $/mo"
+              <RoomyNumberRow
+                label="Shelter cost"
+                suffix="$ / mo"
+                hint="Rent or mortgage plus property tax + insurance. Combined with the utility allowance, drives the excess-shelter deduction once shelter exceeds half of net income."
                 value={household.monthly_shelter_costs}
                 min={0}
                 max={3000}
                 step={50}
                 onChange={(v) => setHousehold({ ...household, monthly_shelter_costs: v })}
               />
-              <CompactNumberRow
-                label="Resources $"
+              <RoomyNumberRow
+                label="Liquid resources"
+                suffix="$"
+                hint="Cash + bank account balances. Households above the federal resource limit lose SNAP eligibility entirely — a cliff that's separate from income."
                 value={household.liquid_resources}
                 min={0}
                 max={5000}
                 step={100}
                 onChange={(v) => setHousehold({ ...household, liquid_resources: v })}
               />
-              <CompactNumberRow
-                label="Earnings max"
+            </div>
+            <div className="mt-3 space-y-2 border-t border-rule pt-3">
+              <RoomyCheck
+                label="Separate heating or cooling expense"
+                hint="Triggers the largest Standard Utility Allowance ($571 / mo in Colorado FY 2026), which feeds the excess-shelter deduction."
+                checked={household.pays_separate_heating_or_cooling}
+                onChange={(v) =>
+                  setHousehold({ ...household, pays_separate_heating_or_cooling: v })
+                }
+              />
+              <RoomyCheck
+                label="Elderly or disabled member"
+                hint="Removes the gross-income test and uncaps the excess-shelter deduction — usually a big SNAP boost for qualifying households."
+                checked={household.any_member_elderly_or_disabled}
+                onChange={(v) =>
+                  setHousehold({ ...household, any_member_elderly_or_disabled: v })
+                }
+              />
+            </div>
+          </CompactCard>
+
+          <CompactCard title="Earnings sweep">
+            <div className="space-y-2.5">
+              <RoomyNumberRow
+                label="Max earnings"
+                suffix="$ / mo"
+                hint="Upper bound of the income range we sweep across. Pick high enough to clear the gross-income limit so you see the full phase-out."
                 value={earningsMax}
                 min={1000}
                 max={10000}
                 step={500}
                 onChange={setEarningsMax}
               />
-              <CompactNumberRow
-                label="Step $"
+              <RoomyNumberRow
+                label="Sweep step"
+                suffix="$"
+                hint="Resolution of the sweep — smaller steps mean smoother curves but slightly more compute per click."
                 value={step}
                 min={25}
                 max={500}
                 step={25}
                 onChange={setStep}
-              />
-            </div>
-            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 border-t border-rule pt-3 text-[12px]">
-              <InlineCheck
-                label="Separate heating/cooling"
-                checked={household.pays_separate_heating_or_cooling}
-                onChange={(v) =>
-                  setHousehold({ ...household, pays_separate_heating_or_cooling: v })
-                }
-              />
-              <InlineCheck
-                label="Elderly/disabled member"
-                checked={household.any_member_elderly_or_disabled}
-                onChange={(v) =>
-                  setHousehold({ ...household, any_member_elderly_or_disabled: v })
-                }
               />
             </div>
           </CompactCard>
@@ -361,6 +378,7 @@ export default function Page() {
                   key={lever.id}
                   label={lever.label}
                   baseline={lever.baseline_label}
+                  hint={lever.description}
                   min={lever.min_multiplier}
                   max={lever.max_multiplier}
                   step={lever.step}
@@ -450,7 +468,7 @@ function Card({
   computing?: boolean;
 }) {
   return (
-    <section className="relative overflow-hidden border border-rule bg-paper-elevated px-3 py-2.5">
+    <section className="relative border border-rule bg-paper-elevated px-3 py-2.5">
       {computing && <div className="computing-bar" aria-hidden />}
       <div className="mb-2 flex items-baseline justify-between gap-3 border-b border-rule pb-1.5">
         <h2 className="text-[13px] font-bold tracking-[-0.01em] text-ink">{title}</h2>
@@ -485,8 +503,25 @@ function CompactCard({
   );
 }
 
-function CompactNumberRow({
+function Tip({ text }: { text: string }) {
+  // Small ⓘ glyph with a CSS-only hover tooltip. Z-index high so it floats
+  // over chart cards; positioned above the trigger so it doesn't push layout.
+  return (
+    <span className="group/tip relative inline-flex items-center">
+      <span className="flex h-3.5 w-3.5 cursor-help select-none items-center justify-center rounded-full border border-rule-strong text-[8px] font-bold text-ink-muted transition-colors group-hover/tip:border-accent group-hover/tip:text-accent">
+        i
+      </span>
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden w-60 -translate-x-1/2 border border-rule bg-paper-elevated px-3 py-2 text-[11px] leading-snug text-ink-secondary shadow-md group-hover/tip:block">
+        {text}
+      </span>
+    </span>
+  );
+}
+
+function RoomyNumberRow({
   label,
+  hint,
+  suffix,
   value,
   min,
   max,
@@ -494,6 +529,8 @@ function CompactNumberRow({
   onChange,
 }: {
   label: string;
+  hint?: string;
+  suffix?: string;
   value: number;
   min: number;
   max: number;
@@ -501,39 +538,54 @@ function CompactNumberRow({
   onChange: (v: number) => void;
 }) {
   return (
-    <label className="flex items-center justify-between gap-2 text-[11px]">
-      <span className="truncate text-ink-secondary">{label}</span>
-      <input
-        type="number"
-        value={value}
-        min={min}
-        max={max}
-        step={step}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-[72px] px-1.5 py-0.5 text-right font-mono text-[12px]"
-      />
+    <label className="flex items-center justify-between gap-2">
+      <span className="flex items-center gap-1.5 text-[12px] text-ink-secondary">
+        {label}
+        {hint && <Tip text={hint} />}
+      </span>
+      <span className="flex items-baseline gap-1.5">
+        <input
+          type="number"
+          value={value}
+          min={min}
+          max={max}
+          step={step}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="w-[78px] px-1.5 py-0.5 text-right font-mono text-[12px]"
+        />
+        {suffix && (
+          <span className="font-mono text-[10px] uppercase tracking-wider text-ink-muted">
+            {suffix}
+          </span>
+        )}
+      </span>
     </label>
   );
 }
 
-function InlineCheck({
+function RoomyCheck({
   label,
+  hint,
   checked,
   onChange,
 }: {
   label: string;
+  hint?: string;
   checked: boolean;
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-1.5 text-ink-secondary">
+    <label className="flex items-center justify-between gap-2 text-[12px]">
+      <span className="flex items-center gap-1.5 text-ink-secondary">
+        {label}
+        {hint && <Tip text={hint} />}
+      </span>
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
         className="h-3.5 w-3.5"
       />
-      <span>{label}</span>
     </label>
   );
 }
@@ -541,6 +593,7 @@ function InlineCheck({
 function CompactLeverRow({
   label,
   baseline,
+  hint,
   min,
   max,
   step,
@@ -550,6 +603,7 @@ function CompactLeverRow({
 }: {
   label: string;
   baseline: string;
+  hint?: string;
   min: number;
   max: number;
   step: number;
@@ -562,8 +616,11 @@ function CompactLeverRow({
   return (
     <div className="mb-1.5 last:mb-0">
       <div className="flex items-baseline justify-between gap-2 text-[12px] leading-tight">
-        <span className="truncate text-ink" title={`baseline · ${baseline}`}>
-          {label}
+        <span className="flex min-w-0 items-center gap-1.5 truncate text-ink">
+          <span className="truncate" title={`baseline · ${baseline}`}>
+            {label}
+          </span>
+          {hint && <Tip text={hint} />}
         </span>
         <span
           className={`shrink-0 font-mono text-[11px] ${
