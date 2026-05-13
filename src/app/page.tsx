@@ -5,7 +5,9 @@ import {
   Area,
   ComposedChart,
   CartesianGrid,
+  LabelList,
   Line,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -451,17 +453,27 @@ function Card({
   children,
   eyebrow,
   computing,
+  yUnit,
 }: {
   title: string;
   children: React.ReactNode;
   eyebrow?: string;
   computing?: boolean;
+  /** Small-caps axis-unit annotation rendered next to the title. */
+  yUnit?: string;
 }) {
   return (
     <section className="relative border border-rule bg-paper-elevated px-3 py-2.5">
       {computing && <div className="computing-bar" aria-hidden />}
       <div className="mb-2 flex items-baseline justify-between gap-3 border-b border-rule pb-1.5">
-        <h2 className="text-[13px] font-bold tracking-[-0.01em] text-ink">{title}</h2>
+        <h2 className="flex items-baseline gap-2 text-[13px] font-bold tracking-[-0.01em] text-ink">
+          {title}
+          {yUnit && (
+            <span className="font-mono text-[9px] font-normal uppercase tracking-[0.22em] text-ink-muted">
+              · {yUnit.replace(/\s+/g, " ")}
+            </span>
+          )}
+        </h2>
         {eyebrow && (
           <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-ink-muted">
             {eyebrow}
@@ -697,10 +709,21 @@ function CliffChart({
   loading?: boolean;
 }) {
   const initialLoading = loading && data.length === 0;
+  const lastIdx = data.length - 1;
+  const xMax = lastIdx >= 0 ? data[lastIdx].earnings : 0;
+  // X-axis tick marks at round $1000 intervals — the auto ticks land on odd
+  // numbers as the sweep range varies.
+  const xTicks: number[] = [];
+  for (let v = 0; v <= xMax; v += 1000) xTicks.push(v);
+
   return (
-    <Card title={title} eyebrow={eyebrow} computing={loading && data.length > 0}>
-      <ChartLegend reformDirty={reformDirty} />
-      <div className="relative" style={{ width: "100%", height: 210 }}>
+    <Card
+      title={title}
+      eyebrow={eyebrow}
+      computing={loading && data.length > 0}
+      yUnit={yLabel}
+    >
+      <div className="relative" style={{ width: "100%", height: 220 }}>
         {initialLoading && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-paper-elevated/90">
             <Spinner />
@@ -709,22 +732,38 @@ function CliffChart({
             </div>
           </div>
         )}
+        <CornerBrackets />
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 8, right: 18, bottom: 28, left: 6 }}>
+          <ComposedChart
+            data={data}
+            margin={{ top: 14, right: 78, bottom: 28, left: 14 }}
+          >
             <defs>
               <linearGradient id="delta-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={ACCENT} stopOpacity={0.18} />
+                <stop offset="0%" stopColor={ACCENT} stopOpacity={0.16} />
                 <stop offset="100%" stopColor={ACCENT} stopOpacity={0.02} />
               </linearGradient>
+              <pattern
+                id="cliff-hatch"
+                width="6"
+                height="6"
+                patternUnits="userSpaceOnUse"
+                patternTransform="rotate(45)"
+              >
+                <line x1="0" y1="0" x2="0" y2="6" stroke={ERROR} strokeWidth="1" strokeOpacity="0.18" />
+              </pattern>
             </defs>
-            <CartesianGrid stroke={RULE} strokeDasharray="2 4" vertical={false} />
+            <CartesianGrid stroke={RULE} strokeDasharray="1 4" vertical={false} />
             <XAxis
               dataKey="earnings"
+              type="number"
+              domain={[0, xMax]}
+              ticks={xTicks}
               tickFormatter={dollars}
               stroke={RULE_STRONG}
-              strokeWidth={1}
+              strokeWidth={0.5}
               tick={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, fill: RULE_STRONG }}
-              tickLine={{ stroke: RULE_STRONG }}
+              tickLine={false}
               label={{
                 value: "MONTHLY EARNINGS",
                 position: "bottom",
@@ -740,14 +779,44 @@ function CliffChart({
             <YAxis
               tickFormatter={yFormat}
               stroke={RULE_STRONG}
-              strokeWidth={1}
+              strokeWidth={0.5}
               tick={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, fill: RULE_STRONG }}
-              tickLine={{ stroke: RULE_STRONG }}
-              width={56}
+              tickLine={false}
+              width={48}
               domain={[0, "auto"]}
             />
+            {/* Cliff zone shading — only on the MTR chart, where the reference
+                line is set to 100%. The hatched red rectangle visually
+                screams "anything in here is a cliff." */}
+            {referenceLine && (
+              <ReferenceArea
+                y1={referenceLine.y}
+                y2={Number.MAX_SAFE_INTEGER}
+                fill="url(#cliff-hatch)"
+                fillOpacity={1}
+                stroke="none"
+                ifOverflow="extendDomain"
+              />
+            )}
+            {referenceLine && (
+              <ReferenceLine
+                y={referenceLine.y}
+                stroke={ERROR}
+                strokeDasharray="3 3"
+                strokeWidth={0.75}
+                label={{
+                  value: referenceLine.label.toUpperCase(),
+                  position: "insideTopRight",
+                  fill: ERROR,
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: 9,
+                  letterSpacing: "0.18em",
+                  offset: 4,
+                }}
+              />
+            )}
             <Tooltip
-              cursor={{ stroke: INK, strokeWidth: 1, strokeDasharray: "2 2" }}
+              cursor={{ stroke: INK, strokeWidth: 0.75, strokeDasharray: "2 3" }}
               content={(props) => (
                 <TooltipCard
                   active={Boolean(props.active)}
@@ -767,22 +836,6 @@ function CliffChart({
                 />
               )}
             />
-            {referenceLine && (
-              <ReferenceLine
-                y={referenceLine.y}
-                stroke={ERROR}
-                strokeDasharray="4 3"
-                strokeWidth={1}
-                label={{
-                  value: referenceLine.label.toUpperCase(),
-                  position: "insideTopRight",
-                  fill: ERROR,
-                  fontFamily: "JetBrains Mono, monospace",
-                  fontSize: 9,
-                  letterSpacing: "0.18em",
-                }}
-              />
-            )}
             <Area
               type="monotone"
               dataKey={reformKey as string}
@@ -806,7 +859,20 @@ function CliffChart({
               isAnimationActive
               animationDuration={350}
               animationEasing="ease-out"
-            />
+            >
+              <LabelList
+                dataKey={baselineKey as string}
+                content={(props) => (
+                  <SeriesEndLabel
+                    {...(props as Record<string, unknown>)}
+                    text="BASELINE"
+                    color={INK}
+                    show={data.length > 0}
+                    isLast={(props as { index?: number }).index === lastIdx}
+                  />
+                )}
+              />
+            </Line>
             <Line
               type="monotone"
               dataKey={reformKey as string}
@@ -824,11 +890,92 @@ function CliffChart({
               isAnimationActive
               animationDuration={350}
               animationEasing="ease-out"
-            />
+            >
+              {reformDirty && (
+                <LabelList
+                  dataKey={reformKey as string}
+                  content={(props) => (
+                    <SeriesEndLabel
+                      {...(props as Record<string, unknown>)}
+                      text="REFORM"
+                      color={ACCENT}
+                      show
+                      isLast={(props as { index?: number }).index === lastIdx}
+                    />
+                  )}
+                />
+              )}
+            </Line>
           </ComposedChart>
         </ResponsiveContainer>
       </div>
     </Card>
+  );
+}
+
+/** Tufte-style direct label on the right edge of the line. Recharts pipes
+ *  this through LabelList with the rendered point coords. We only paint at
+ *  the last data point so it sits at the line's right end. */
+function SeriesEndLabel(props: {
+  x?: number;
+  y?: number;
+  value?: number | null;
+  isLast?: boolean;
+  show?: boolean;
+  text: string;
+  color: string;
+}) {
+  if (!props.isLast || !props.show || props.value == null) return null;
+  const x = typeof props.x === "number" ? props.x : 0;
+  const y = typeof props.y === "number" ? props.y : 0;
+  return (
+    <g>
+      <line
+        x1={x}
+        y1={y}
+        x2={x + 6}
+        y2={y}
+        stroke={props.color}
+        strokeWidth={0.75}
+        strokeOpacity={0.6}
+      />
+      <text
+        x={x + 9}
+        y={y}
+        fill={props.color}
+        fontFamily="JetBrains Mono, monospace"
+        fontSize={9}
+        letterSpacing="0.18em"
+        dominantBaseline="middle"
+      >
+        {props.text}
+      </text>
+    </g>
+  );
+}
+
+/** Small L-shaped tick at each corner of the plot frame. Lives behind the
+ *  ResponsiveContainer with absolute positioning so it sits inside the card
+ *  padding but outside Recharts' margin box. */
+function CornerBrackets() {
+  const stroke = RULE_STRONG;
+  const sw = 1;
+  const len = 8;
+  const inset = 2;
+  return (
+    <svg
+      className="pointer-events-none absolute inset-0 h-full w-full"
+      aria-hidden
+    >
+      <line x1={inset} y1={inset} x2={inset + len} y2={inset} stroke={stroke} strokeWidth={sw} />
+      <line x1={inset} y1={inset} x2={inset} y2={inset + len} stroke={stroke} strokeWidth={sw} />
+      <line x1={`calc(100% - ${inset + len}px)`} y1={inset} x2={`calc(100% - ${inset}px)`} y2={inset} stroke={stroke} strokeWidth={sw} />
+      <line x1={`calc(100% - ${inset}px)`} y1={inset} x2={`calc(100% - ${inset}px)`} y2={inset + len} stroke={stroke} strokeWidth={sw} />
+      <line x1={inset} y1={`calc(100% - ${inset}px)`} x2={inset + len} y2={`calc(100% - ${inset}px)`} stroke={stroke} strokeWidth={sw} />
+      <line x1={inset} y1={`calc(100% - ${inset + len}px)`} x2={inset} y2={`calc(100% - ${inset}px)`} stroke={stroke} strokeWidth={sw} />
+      <line x1={`calc(100% - ${inset + len}px)`} y1={`calc(100% - ${inset}px)`} x2={`calc(100% - ${inset}px)`} y2={`calc(100% - ${inset}px)`} stroke={stroke} strokeWidth={sw} />
+      <line x1={`calc(100% - ${inset}px)`} y1={`calc(100% - ${inset + len}px)`} x2={`calc(100% - ${inset}px)`} y2={`calc(100% - ${inset}px)`} stroke={stroke} strokeWidth={sw} />
+    </svg>
   );
 }
 
@@ -858,28 +1005,6 @@ function Spinner() {
         fill="none"
       />
     </svg>
-  );
-}
-
-function ChartLegend({ reformDirty }: { reformDirty: boolean }) {
-  return (
-    <div className="-mt-1 mb-3 flex items-center gap-5 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-secondary">
-      <span className="flex items-center gap-2">
-        <span className="inline-block h-[2px] w-5 bg-ink" />
-        baseline · current law
-      </span>
-      {reformDirty && (
-        <span className="flex items-center gap-2 text-accent">
-          <span
-            className="inline-block h-[2px] w-5"
-            style={{
-              backgroundImage: `repeating-linear-gradient(90deg, ${ACCENT} 0 4px, transparent 4px 6px)`,
-            }}
-          />
-          reform
-        </span>
-      )}
-    </div>
   );
 }
 
