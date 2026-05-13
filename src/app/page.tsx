@@ -290,7 +290,7 @@ export default function Page() {
               />
               <RoomyNumberRow
                 label="Monthly shelter cost"
-                suffix="$ / mo"
+                prefix="$"
                 hint="Rent or mortgage plus property tax + insurance. Combined with the utility allowance, drives the excess-shelter deduction once shelter exceeds half of net income."
                 value={household.monthly_shelter_costs}
                 min={0}
@@ -300,7 +300,7 @@ export default function Page() {
               />
               <RoomyNumberRow
                 label="Liquid resources"
-                suffix="$"
+                prefix="$"
                 hint="Cash + bank account balances. Households above the federal resource limit lose SNAP eligibility entirely — a cliff that's separate from income."
                 value={household.liquid_resources}
                 min={0}
@@ -333,7 +333,7 @@ export default function Page() {
             <div className="space-y-2.5">
               <RoomyNumberRow
                 label="Max earnings"
-                suffix="$ / mo"
+                prefix="$"
                 hint="Upper bound of the income range we sweep across. Pick high enough to clear the gross-income limit so you see the full phase-out."
                 value={earningsMax}
                 min={1000}
@@ -343,7 +343,7 @@ export default function Page() {
               />
               <RoomyNumberRow
                 label="Sweep step"
-                suffix="$"
+                prefix="$"
                 hint="Resolution of the sweep — smaller steps mean smoother curves but slightly more compute per click."
                 value={step}
                 min={25}
@@ -511,7 +511,7 @@ function Tip({ text }: { text: string }) {
 function RoomyNumberRow({
   label,
   hint,
-  suffix,
+  prefix,
   value,
   min,
   max,
@@ -520,7 +520,8 @@ function RoomyNumberRow({
 }: {
   label: string;
   hint?: string;
-  suffix?: string;
+  /** Visual prefix shown inside the input box (e.g. "$"). */
+  prefix?: string;
   value: number;
   min: number;
   max: number;
@@ -533,7 +534,12 @@ function RoomyNumberRow({
         {label}
         {hint && <Tip text={hint} />}
       </span>
-      <span className="flex items-baseline gap-1.5">
+      <span className="relative inline-block">
+        {prefix && (
+          <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 font-mono text-[11px] text-ink-muted">
+            {prefix}
+          </span>
+        )}
         <input
           type="number"
           value={value}
@@ -541,13 +547,10 @@ function RoomyNumberRow({
           max={max}
           step={step}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="w-[78px] px-1.5 py-0.5 text-right font-mono text-[12px]"
+          className={`w-[88px] py-0.5 pr-1.5 text-right font-mono text-[12px] ${
+            prefix ? "pl-5" : "pl-1.5"
+          }`}
         />
-        {suffix && (
-          <span className="font-mono text-[10px] uppercase tracking-wider text-ink-muted">
-            {suffix}
-          </span>
-        )}
       </span>
     </label>
   );
