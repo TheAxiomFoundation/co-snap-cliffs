@@ -48,55 +48,130 @@ export default function Page() {
   const [step, setStep] = useState(100);
   const [baseline, setBaseline] = useState<SweepResult | null>(null);
   const [reform, setReform] = useState<SweepResult | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Loading is a counter, not a boolean: baseline and reform can be in flight
+  // independently, so we need to track outstanding fetches and only flip the
+  // spinner off when *both* have settled.
+  const [loadingCount, setLoadingCount] = useState(0);
+  const loading = loadingCount > 0;
+  const startLoad = () => setLoadingCount((c) => c + 1);
+  const endLoad = () => setLoadingCount((c) => Math.max(0, c - 1));
   const [err, setErr] = useState<string | null>(null);
-  const debounceRef = useRef<number | null>(null);
+  const baselineTimer = useRef<number | null>(null);
+  const reformTimer = useRef<number | null>(null);
+  // Memoization: every successful sweep gets cached by its request signature.
+  // Sliding back to a configuration you've already explored returns instantly
+  // with no fetch. The cache survives the session; resetting state doesn't
+  // clear it.
+  const cacheRef = useRef(new Map<string, SweepResult>());
+  // Tracks the in-flight request keys so we don't double-fire identical
+  // requests during a fast slider drag (the cache only has the *completed*
+  // ones).
+  const inflightRef = useRef(new Map<string, Promise<SweepResult>>());
 
   const reformDirty = useMemo(
     () => LEVERS.some((l) => reformMultipliers[l.id] !== 1),
     [reformMultipliers],
   );
 
-  async function fetchSweep(multipliers: Record<string, number>): Promise<SweepResult> {
-    const r = await fetch("/api/cliff-sweep", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        household,
-        earnings_min: 0,
-        earnings_max: earningsMax,
-        earnings_step: step,
-        parameter_multipliers: multipliers,
-      }),
+  function requestSignature(multipliers: Record<string, number>): string {
+    return JSON.stringify({
+      h: household,
+      e: [earningsMax, step],
+      m: multipliers,
     });
-    if (!r.ok) throw new Error(`api ${r.status}: ${(await r.text()).slice(0, 200)}`);
-    return (await r.json()) as SweepResult;
   }
 
-  function run() {
-    if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    debounceRef.current = window.setTimeout(async () => {
-      setLoading(true);
+  async function fetchSweep(multipliers: Record<string, number>): Promise<SweepResult> {
+    const key = requestSignature(multipliers);
+    const cached = cacheRef.current.get(key);
+    if (cached) return cached;
+    const inflight = inflightRef.current.get(key);
+    if (inflight) return inflight;
+    const promise = (async () => {
+      const r = await fetch("/api/cliff-sweep", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          household,
+          earnings_min: 0,
+          earnings_max: earningsMax,
+          earnings_step: step,
+          parameter_multipliers: multipliers,
+        }),
+      });
+      if (!r.ok) throw new Error(`api ${r.status}: ${(await r.text()).slice(0, 200)}`);
+      const result = (await r.json()) as SweepResult;
+      cacheRef.current.set(key, result);
+      return result;
+    })();
+    inflightRef.current.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      inflightRef.current.delete(key);
+    }
+  }
+
+  // Baseline depends only on (household, earnings_range). It does NOT change
+  // when reform multipliers move — so slider drags don't re-fire it.
+  useEffect(() => {
+    if (baselineTimer.current) window.clearTimeout(baselineTimer.current);
+    baselineTimer.current = window.setTimeout(async () => {
+      startLoad();
       setErr(null);
       try {
-        const [b, r] = await Promise.all([
-          fetchSweep(DEFAULT_MULTIPLIERS()),
-          reformDirty ? fetchSweep(reformMultipliers) : Promise.resolve(null),
-        ]);
-        setBaseline(b);
-        setReform(r);
+        setBaseline(await fetchSweep(DEFAULT_MULTIPLIERS()));
       } catch (e) {
         setErr((e as Error).message);
       } finally {
-        setLoading(false);
+        endLoad();
       }
     }, 200);
-  }
-
-  useEffect(() => {
-    run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [household, reformMultipliers, earningsMax, step]);
+  }, [household, earningsMax, step]);
+
+  // Reform depends on multipliers as well. Skip the fetch entirely when no
+  // lever has moved off 1.00× — there's nothing different from baseline.
+  useEffect(() => {
+    if (reformTimer.current) window.clearTimeout(reformTimer.current);
+    if (!reformDirty) {
+      setReform(null);
+      return;
+    }
+    reformTimer.current = window.setTimeout(async () => {
+      startLoad();
+      setErr(null);
+      try {
+        setReform(await fetchSweep(reformMultipliers));
+      } catch (e) {
+        setErr((e as Error).message);
+      } finally {
+        endLoad();
+      }
+    }, 200);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [household, earningsMax, step, reformMultipliers, reformDirty]);
+
+  // `run` is the retry handler the error banner button calls.
+  function run() {
+    cacheRef.current.clear();
+    inflightRef.current.clear();
+    setErr(null);
+    // Trigger both effects by jiggling refs; simpler is just to refetch
+    // directly with the current values.
+    (async () => {
+      startLoad();
+      try {
+        const b = await fetchSweep(DEFAULT_MULTIPLIERS());
+        setBaseline(b);
+        if (reformDirty) setReform(await fetchSweep(reformMultipliers));
+      } catch (e) {
+        setErr((e as Error).message);
+      } finally {
+        endLoad();
+      }
+    })();
+  }
 
   const chartData = useMemo(() => {
     if (!baseline) return [];
