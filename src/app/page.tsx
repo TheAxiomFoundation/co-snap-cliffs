@@ -393,19 +393,9 @@ export default function Page() {
             <button
               onClick={() => setAppliedMultipliers(reformMultipliers)}
               disabled={pendingChanges === 0 || loading}
-              className="mt-3 flex w-full items-center justify-center gap-2 border border-accent bg-accent px-3 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-paper-elevated transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:border-rule-strong disabled:bg-transparent disabled:text-ink-muted"
+              className="mt-3 flex w-full items-center justify-center gap-2 border border-accent bg-accent px-3 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-paper-elevated transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:border-rule disabled:bg-rule-subtle disabled:text-ink-muted"
             >
-              {loading && pendingChanges === 0 ? (
-                <>
-                  <Spinner /> running
-                </>
-              ) : pendingChanges > 0 ? (
-                <>
-                  Run reform · {pendingChanges} pending
-                </>
-              ) : (
-                "Up to date"
-              )}
+              Run reform
             </button>
           </CompactCard>
         </aside>
