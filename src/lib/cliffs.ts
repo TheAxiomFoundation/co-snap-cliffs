@@ -70,13 +70,38 @@ export async function runCliffSweep(opts: SweepOptions): Promise<SweepResult> {
   const max = opts.earnings_max ?? DEFAULTS.earnings_max;
   const step = opts.earnings_step ?? DEFAULTS.earnings_step;
   const threshold = opts.cliff_mtr_threshold ?? DEFAULTS.cliff_mtr_threshold;
+  const overrides = opts.parameter_overrides ?? [];
 
+  // Production fast path: send a ~150-byte payload to Modal's /cliff-sweep
+  // endpoint; Modal builds the engine request server-side, runs, returns
+  // the full SweepResult. Saves ~100 KB of upload + a JSON round-trip on
+  // both ends compared to assembling the request on Vercel.
+  const ENGINE_URL = process.env.AXIOM_ENGINE_URL?.replace(/\/$/, "");
+  if (ENGINE_URL) {
+    const r = await fetch(`${ENGINE_URL}/cliff-sweep`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        program: ARTIFACT_SLUG,
+        household: opts.household,
+        earnings_min: min,
+        earnings_max: max,
+        earnings_step: step,
+        cliff_mtr_threshold: threshold,
+        overrides,
+      }),
+    });
+    if (!r.ok) throw new Error(`axiom-engine ${r.status}: ${(await r.text()).slice(0, 500)}`);
+    const result = (await r.json()) as SweepResult;
+    return { ...result, ms: Date.now() - start };
+  }
+
+  // Local-dev path: spawn the binary directly, assemble the request in TS,
+  // run, post-process. Unchanged from before.
   const earningsPoints: number[] = [];
   for (let e = min; e <= max; e += step) earningsPoints.push(e);
 
   const { request } = buildSweepRequest(opts.household, earningsPoints);
-
-  const overrides = opts.parameter_overrides ?? [];
   const response = await runEngine(ARTIFACT_SLUG, request, overrides);
 
   const idForOutput = (name: SurfaceOutputName): string =>
