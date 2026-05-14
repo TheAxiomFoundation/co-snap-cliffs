@@ -20,5 +20,9 @@ compile() {
 
 compile co-snap engine/rules-us-co/policies/cdhs/snap/fy-2026-benefit-calculation.yaml
 
+# Re-emit the schema as JSON for Modal to consume. Cheap (sub-second).
+echo "==> dumping co-snap-base.json"
+bun run scripts/dump-co-snap-base.ts
+
 echo "==> artifacts:"
 ls -lh engine/artifacts/
