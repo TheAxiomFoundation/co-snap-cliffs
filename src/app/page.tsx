@@ -1052,14 +1052,34 @@ function TooltipCard({
   yLabel: string;
 }) {
   if (!active || payload.length === 0) return null;
+  const rows = payload.reduce(
+    (acc, item) => {
+      const key = item.dataKey ?? item.name ?? String(acc.length);
+      const existingIndex = acc.findIndex((row) => row.key === key);
+      const row = { ...item, key };
+      if (existingIndex === -1) {
+        acc.push(row);
+      } else if (!acc[existingIndex].name && item.name) {
+        acc[existingIndex] = row;
+      }
+      return acc;
+    },
+    [] as Array<{
+      key: string;
+      name?: string;
+      dataKey?: string;
+      value?: number;
+      color?: string;
+    }>,
+  );
   return (
     <div className="border border-rule bg-paper-elevated px-3 py-2 shadow-sm">
       <div className="mb-1 font-mono text-[9px] uppercase tracking-[0.22em] text-ink-muted">
         earnings · ${Math.round(label).toLocaleString()} / mo
       </div>
-      {payload.map((p) => (
+      {rows.map((p) => (
         <div
-          key={p.dataKey}
+          key={p.key}
           className="flex items-baseline justify-between gap-4 font-mono text-xs"
         >
           <span
@@ -1077,4 +1097,3 @@ function TooltipCard({
     </div>
   );
 }
-
