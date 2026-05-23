@@ -208,10 +208,8 @@ export default function Page() {
       return {
         earnings: p.earnings,
         baseline_snap: p.snap,
-        baseline_net: p.net_resources,
         baseline_mtr_pct: baselineMtrPct,
         reform_snap: reformPoint?.snap ?? p.snap,
-        reform_net: reformPoint?.net_resources ?? p.net_resources,
         reform_mtr_pct:
           reformMtr === undefined || reformMtr === null
             ? baselineMtrPct
@@ -424,21 +422,8 @@ export default function Page() {
 
         <section className="col-span-12 space-y-3 md:col-span-8">
           <CliffChart
-            title="Net resources vs earnings"
-            eyebrow="§ I · earnings + SNAP allotment"
-            data={chartData}
-            baselineKey="baseline_net"
-            reformKey="reform_net"
-            reformDirty={reformDirty}
-            yFormat={dollars}
-            valueFormat={dollars}
-            yLabel="$ / month"
-            loading={loading}
-          />
-
-          <CliffChart
             title="SNAP allotment"
-            eyebrow="§ II · monthly benefit"
+            eyebrow="§ I · monthly benefit"
             data={chartData}
             baselineKey="baseline_snap"
             reformKey="reform_snap"
@@ -451,7 +436,7 @@ export default function Page() {
 
           <CliffChart
             title="Marginal tax rate on SNAP"
-            eyebrow="§ III · benefit-loss per additional earned dollar"
+            eyebrow="§ II · benefit-loss per additional earned dollar"
             data={chartData}
             baselineKey="baseline_mtr_pct"
             reformKey="reform_mtr_pct"
@@ -704,10 +689,8 @@ function friendlyError(raw: string): string {
 interface ChartDatum {
   earnings: number;
   baseline_snap: number;
-  baseline_net: number;
   baseline_mtr_pct: number | null;
   reform_snap: number | null;
-  reform_net: number | null;
   reform_mtr_pct: number | null;
   baseline_is_cliff: boolean;
   reform_is_cliff: boolean;
@@ -762,7 +745,6 @@ function CliffChart({
             </div>
           </div>
         )}
-        <CornerBrackets />
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={data}
@@ -981,31 +963,6 @@ function SeriesEndLabel(props: {
         {props.text}
       </text>
     </g>
-  );
-}
-
-/** Small L-shaped tick at each corner of the plot frame. Lives behind the
- *  ResponsiveContainer with absolute positioning so it sits inside the card
- *  padding but outside Recharts' margin box. */
-function CornerBrackets() {
-  const stroke = RULE_STRONG;
-  const sw = 1;
-  const len = 8;
-  const inset = 2;
-  return (
-    <svg
-      className="pointer-events-none absolute inset-0 h-full w-full"
-      aria-hidden
-    >
-      <line x1={inset} y1={inset} x2={inset + len} y2={inset} stroke={stroke} strokeWidth={sw} />
-      <line x1={inset} y1={inset} x2={inset} y2={inset + len} stroke={stroke} strokeWidth={sw} />
-      <line x1={`calc(100% - ${inset + len}px)`} y1={inset} x2={`calc(100% - ${inset}px)`} y2={inset} stroke={stroke} strokeWidth={sw} />
-      <line x1={`calc(100% - ${inset}px)`} y1={inset} x2={`calc(100% - ${inset}px)`} y2={inset + len} stroke={stroke} strokeWidth={sw} />
-      <line x1={inset} y1={`calc(100% - ${inset}px)`} x2={inset + len} y2={`calc(100% - ${inset}px)`} stroke={stroke} strokeWidth={sw} />
-      <line x1={inset} y1={`calc(100% - ${inset + len}px)`} x2={inset} y2={`calc(100% - ${inset}px)`} stroke={stroke} strokeWidth={sw} />
-      <line x1={`calc(100% - ${inset + len}px)`} y1={`calc(100% - ${inset}px)`} x2={`calc(100% - ${inset}px)`} y2={`calc(100% - ${inset}px)`} stroke={stroke} strokeWidth={sw} />
-      <line x1={`calc(100% - ${inset}px)`} y1={`calc(100% - ${inset + len}px)`} x2={`calc(100% - ${inset}px)`} y2={`calc(100% - ${inset}px)`} stroke={stroke} strokeWidth={sw} />
-    </svg>
   );
 }
 
