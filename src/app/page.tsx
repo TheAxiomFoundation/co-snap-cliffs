@@ -41,6 +41,21 @@ const DEFAULT_HH: Household = {
 const DEFAULT_MULTIPLIERS = (): Record<string, number> =>
   Object.fromEntries(LEVERS.map((l) => [l.id, 1]));
 
+/** True on phone-width viewports. Drives a few chart-layout tweaks (tighter
+ *  right margin, no inline series-end labels) so charts fit without overflow.
+ *  Returns false during SSR / first paint so desktop output is unchanged. */
+function useIsNarrow(): boolean {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 640px)");
+    const update = () => setNarrow(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  return narrow;
+}
+
 export default function Page() {
   const [household, setHousehold] = useState<Household>(DEFAULT_HH);
   // Two slider buckets:
@@ -221,10 +236,10 @@ export default function Page() {
   }, [baseline, reform]);
 
   return (
-    <main className="relative z-10 mx-auto max-w-7xl px-6 pb-12 pt-5">
-      <header className="mb-6 flex items-end justify-between gap-6 border-b border-rule pb-4">
-        <div className="flex items-center gap-4">
-          <a href="https://axiomfoundation.org" className="inline-flex w-[108px] shrink-0 no-underline">
+    <main className="relative z-10 mx-auto max-w-7xl px-4 pb-12 pt-5 sm:px-6">
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3 border-b border-rule pb-4">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+          <a href="https://axiomfoundation.org" className="inline-flex w-[88px] shrink-0 no-underline sm:w-[108px]">
             <img
               src="/axiom-foundation.svg"
               alt="Axiom Foundation"
@@ -232,11 +247,11 @@ export default function Page() {
               className="block h-auto w-full"
             />
           </a>
-          <div className="border-l border-rule pl-4">
+          <div className="min-w-0 border-l border-rule pl-3 sm:pl-4">
             <div className="text-[10px] uppercase tracking-[0.22em] text-ink-muted">
               Interactive · CDHS SNAP FY 2026
             </div>
-            <h1 className="text-2xl font-bold tracking-[-0.03em] text-ink">
+            <h1 className="text-xl font-bold tracking-[-0.03em] text-ink sm:text-2xl">
               CO&nbsp;SNAP&nbsp;cliffs
             </h1>
           </div>
@@ -267,7 +282,7 @@ export default function Page() {
       )}
 
       <div className="grid grid-cols-12 items-start gap-8">
-        <aside className="col-span-12 space-y-4 md:sticky md:top-6 md:col-span-4 md:self-start">
+        <aside className="col-span-12 min-w-0 space-y-4 md:sticky md:top-6 md:col-span-4 md:self-start">
           <CompactCard
             title="Household"
             rightSlot={
@@ -420,7 +435,7 @@ export default function Page() {
           </CompactCard>
         </aside>
 
-        <section className="col-span-12 space-y-3 md:col-span-8">
+        <section className="col-span-12 min-w-0 space-y-3 md:col-span-8">
           <CliffChart
             title="SNAP allotment"
             eyebrow="§ I · monthly benefit"
@@ -470,8 +485,8 @@ function Card({
   return (
     <section className="relative border border-rule bg-paper-elevated px-3 py-2.5">
       {computing && <div className="computing-bar" aria-hidden />}
-      <div className="mb-2 flex items-baseline justify-between gap-3 border-b border-rule pb-1.5">
-        <h2 className="flex items-baseline gap-2 text-[13px] font-bold tracking-[-0.01em] text-ink">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b border-rule pb-1.5">
+        <h2 className="flex min-w-0 items-baseline gap-2 text-[13px] font-bold tracking-[-0.01em] text-ink">
           {title}
           {yUnit && (
             <span className="font-mono text-[9px] font-normal uppercase tracking-[0.22em] text-ink-muted">
@@ -480,7 +495,7 @@ function Card({
           )}
         </h2>
         {eyebrow && (
-          <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-ink-muted">
+          <span className="min-w-0 break-words font-mono text-[9px] uppercase tracking-[0.22em] text-ink-muted">
             {eyebrow}
           </span>
         )}
@@ -547,11 +562,11 @@ function RoomyNumberRow({
 }) {
   return (
     <label className="flex items-center justify-between gap-2">
-      <span className="flex items-center gap-1.5 text-[12px] text-ink-secondary">
-        {label}
+      <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-ink-secondary">
+        <span className="min-w-0">{label}</span>
         {hint && <Tip text={hint} />}
       </span>
-      <span className="relative inline-block">
+      <span className="relative inline-block shrink-0">
         {prefix && (
           <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 font-mono text-[11px] text-ink-muted">
             {prefix}
@@ -593,15 +608,15 @@ function RoomyCheck({
 }) {
   return (
     <label className="flex items-center justify-between gap-2 text-[12px]">
-      <span className="flex items-center gap-1.5 text-ink-secondary">
-        {label}
+      <span className="flex min-w-0 items-center gap-1.5 text-ink-secondary">
+        <span className="min-w-0">{label}</span>
         {hint && <Tip text={hint} />}
       </span>
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="h-3.5 w-3.5"
+        className="h-3.5 w-3.5 shrink-0"
       />
     </label>
   );
@@ -721,6 +736,7 @@ function CliffChart({
   referenceLine?: { y: number; label: string };
   loading?: boolean;
 }) {
+  const isNarrow = useIsNarrow();
   const initialLoading = loading && data.length === 0;
   const lastIdx = data.length - 1;
   const xMax = lastIdx >= 0 ? data[lastIdx].earnings : 0;
@@ -748,7 +764,7 @@ function CliffChart({
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={data}
-            margin={{ top: 14, right: 78, bottom: 28, left: 14 }}
+            margin={{ top: 14, right: isNarrow ? 14 : 78, bottom: 28, left: 14 }}
           >
             <defs>
               <linearGradient id="delta-fill" x1="0" y1="0" x2="0" y2="1">
@@ -879,7 +895,7 @@ function CliffChart({
                     {...(props as Record<string, unknown>)}
                     text="BASELINE"
                     color={INK}
-                    show={data.length > 0}
+                    show={data.length > 0 && !isNarrow}
                     isLast={(props as { index?: number }).index === lastIdx}
                   />
                 )}
@@ -903,7 +919,7 @@ function CliffChart({
               animationDuration={350}
               animationEasing="ease-out"
             >
-              {reformDirty && (
+              {reformDirty && !isNarrow && (
                 <LabelList
                   dataKey={reformKey as string}
                   content={(props) => (
