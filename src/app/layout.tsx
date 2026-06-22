@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import "./globals.css";
 
-const GA_ID = "G-2YHG89FY0N";
+const GA_ID = "G-5PB7KEWV38";
 const TOOL_NAME = "co-snap-cliffs";
 
 export const metadata: Metadata = {
