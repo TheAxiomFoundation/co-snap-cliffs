@@ -1,6 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "https://axiom.org/snap",
+      "permanent": true
+    }
+  ],
   "functions": {
     "src/app/api/cliff-sweep/route.ts": { "maxDuration": 60 }
   }
