@@ -10,10 +10,10 @@ export const metadata: Metadata = {
   description: "Adjust Colorado SNAP parameters and see how cliffs shift.",
   icons: {
     icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
-      { url: "/axiom-icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/snap/favicon.svg", type: "image/svg+xml" },
+      { url: "/snap/axiom-icon-512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: "/axiom-icon-512.png",
+    apple: "/snap/axiom-icon-512.png",
   },
 };
 
