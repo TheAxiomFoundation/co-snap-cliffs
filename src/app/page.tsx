@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
@@ -238,28 +239,32 @@ export default function Page() {
   return (
     <main className="relative z-10 mx-auto max-w-7xl px-4 pb-12 pt-5 sm:px-6">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3 border-b border-rule pb-4">
-        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-          <a href="https://axiom-foundation.org" className="inline-flex w-[88px] shrink-0 no-underline sm:w-[108px]">
+        <div className="flex min-w-0 items-center gap-3">
+          <a
+            href="https://axiom-foundation.org"
+            aria-label="Axiom Foundation"
+            className="inline-flex w-[100px] shrink-0 no-underline"
+          >
             <img
               src="/gallery/snap/axiom-foundation.svg"
               alt="Axiom Foundation"
-              width={108}
+              width={100}
               className="block h-auto w-full"
             />
           </a>
-          <div className="min-w-0 border-l border-rule pl-3 sm:pl-4">
-            <div className="text-[10px] uppercase tracking-[0.22em] text-ink-muted">
-              Interactive · CDHS SNAP FY 2026
+          <Link href="/" className="min-w-0 border-l border-rule pl-3 no-underline">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted">
+              Interactive
             </div>
-            <h1 className="text-xl font-bold tracking-[-0.03em] text-ink sm:text-2xl">
+            <h1 className="font-serif text-[16px] font-normal leading-tight text-ink">
               Benefits&nbsp;cliff&nbsp;explorer
             </h1>
-          </div>
+          </Link>
         </div>
         <div className="flex shrink-0 items-center gap-4">
           <a
-            href="https://axiom-foundation.org/demos"
-            className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted no-underline hover:text-accent hover:underline"
+            href="https://axiom.org/demos"
+            className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink-muted no-underline hover:text-accent hover:underline"
           >
             All&nbsp;demos
           </a>
@@ -482,7 +487,7 @@ export default function Page() {
         </a>
         {" "}·{" "}
         <a
-          href="https://axiom-foundation.org/demos"
+          href="https://axiom.org/demos"
           className="no-underline hover:text-accent hover:underline"
         >
           All demos
