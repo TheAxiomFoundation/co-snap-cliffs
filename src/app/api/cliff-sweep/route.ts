@@ -18,6 +18,7 @@ if (process.env.AXIOM_ENGINE_URL) {
 }
 
 const Body = z.object({
+  program: z.enum(["ny-snap", "co-snap"]).default("ny-snap"),
   household: z
     .object({
       household_size: z.number().int().min(1).max(20).optional(),
@@ -27,6 +28,8 @@ const Body = z.object({
       any_member_elderly_or_disabled: z.boolean().optional(),
       primary_member_is_us_citizen: z.boolean().optional(),
       liquid_resources: z.number().min(0).optional(),
+      // NY only: which SUA region the household lives in. CO ignores it.
+      region: z.enum(["nyc", "nassau_suffolk", "rest_of_state"]).optional(),
     })
     .default({}),
   earnings_min: z.number().min(0).default(0),
@@ -49,12 +52,13 @@ export async function POST(req: Request): Promise<Response> {
 
   try {
     const result = await runCliffSweep({
+      program: parsed.program,
       household: parsed.household,
       earnings_min: parsed.earnings_min,
       earnings_max: parsed.earnings_max,
       earnings_step: parsed.earnings_step,
       cliff_mtr_threshold: parsed.cliff_mtr_threshold,
-      parameter_overrides: buildOverrides(parsed.parameter_multipliers),
+      parameter_overrides: buildOverrides(parsed.parameter_multipliers, parsed.program),
     });
     return NextResponse.json(result);
   } catch (err) {

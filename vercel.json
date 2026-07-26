@@ -4,8 +4,18 @@
   "redirects": [
     {
       "source": "/",
-      "destination": "https://axiom.org/snap",
+      "destination": "https://axiom.org/gallery/snap",
       "permanent": true
+    },
+    {
+      "source": "/snap",
+      "destination": "/gallery/snap",
+      "permanent": false
+    },
+    {
+      "source": "/snap/:path(.*)",
+      "destination": "/gallery/snap/:path(.*)",
+      "permanent": false
     }
   ],
   "functions": {

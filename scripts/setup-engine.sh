@@ -17,6 +17,14 @@ if [ -d "${FINBOT_ENGINE}/axiom-rules" ] && [ -x "${FINBOT_ENGINE}/axiom-rules/t
   ln -snf "${FINBOT_ENGINE}/axiom-rules" engine/axiom-rules-engine
   ln -snf "${FINBOT_ENGINE}/rules-us" engine/rules-us
   ln -snf "${FINBOT_ENGINE}/rules-us-co" engine/rules-us-co
+  # New York: prefer a live ~/rulespec-us-ny checkout; fall back to the
+  # finbot copy. The dir name stays rules-us-ny for layout consistency —
+  # patch/compile steps re-stage it under the canonical rulespec-us-ny name.
+  if [ -d "${HOME}/rulespec-us-ny" ]; then
+    ln -snf "${HOME}/rulespec-us-ny" engine/rules-us-ny
+  else
+    ln -snf "${FINBOT_ENGINE}/rulespec-us-ny" engine/rules-us-ny
+  fi
   # Alias the binary to the canonical name the runtime expects.
   ln -sf axiom-rules engine/axiom-rules-engine/target/release/axiom-rules-engine
 else
@@ -38,6 +46,16 @@ else
   clone_or_pull axiom-rules-engine
   clone_or_pull rules-us
   clone_or_pull rules-us-co
+  # New York rulespec lives in the rulespec-us-ny repo; keep the local dir
+  # name rules-us-ny to match the other engine/ entries (compile steps
+  # re-stage it under the canonical rulespec-us-ny name).
+  if [ -d "engine/rules-us-ny/.git" ]; then
+    echo "==> updating rulespec-us-ny"
+    git -C engine/rules-us-ny pull --ff-only
+  else
+    echo "==> cloning rulespec-us-ny"
+    git clone --depth 1 "https://github.com/TheAxiomFoundation/rulespec-us-ny.git" engine/rules-us-ny
+  fi
 
   if ! command -v cargo >/dev/null; then
     echo "cargo not found — install Rust first: https://rustup.rs" >&2

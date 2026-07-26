@@ -16,6 +16,7 @@
  * just to render sliders. If a baseline drifts, regenerate or update by hand.
  */
 import type { ParameterOverride } from "./engine/patch-params";
+import type { ProgramSlug } from "./programs/registry";
 
 export interface LeverSpec {
   id: string;
@@ -23,6 +24,8 @@ export interface LeverSpec {
   label: string;
   description: string;
   baseline_label: string;
+  /** Which programs this lever applies to. Federal levers apply to all. */
+  programs: ProgramSlug[];
   /** UI slider: multiplier on the baseline. 1.0 = no change. */
   min_multiplier: number;
   max_multiplier: number;
@@ -38,10 +41,16 @@ const US_MAX_ALLOTMENT = "policies/usda/snap/fy-2026-cola/maximum-allotments.yam
 const US_EARNED_DEDUCTION = "statutes/7/2014/e/2.yaml";
 // Colorado BBCE FPL ratio (default 2.00 = 200% FPL) lives in 4.401.1.
 const CO_BBCE = "regulations/10-ccr-2506-1/4.401.1.yaml";
+// New York BBCE earned-income path ratio (1.50 = 150% FPL) lives in
+// 18 NYCRR 387.14(a)(5).
+const NY_BBCE = "regulations/18-nycrr/387/14/a/5.yaml";
+
+const ALL_PROGRAMS: ProgramSlug[] = ["co-snap", "ny-snap"];
 
 export const LEVERS: LeverSpec[] = [
   {
     id: "max_allotment_scale",
+    programs: ALL_PROGRAMS,
     group: "max-allotment",
     label: "Max allotment ($298 / 1-person)",
     description: "Scale every row of the maximum allotment table by household size.",
@@ -66,6 +75,7 @@ export const LEVERS: LeverSpec[] = [
   },
   {
     id: "standard_deduction_scale",
+    programs: ALL_PROGRAMS,
     group: "deductions",
     label: "Standard deduction ($209 / 1–3 person)",
     description: "Scale the SNAP standard deduction table.",
@@ -84,6 +94,7 @@ export const LEVERS: LeverSpec[] = [
   },
   {
     id: "earned_income_deduction_scale",
+    programs: ALL_PROGRAMS,
     group: "deductions",
     label: "Earned income deduction (20%)",
     description: "Scale the 20% deduction applied to gross earned income.",
@@ -102,6 +113,7 @@ export const LEVERS: LeverSpec[] = [
   },
   {
     id: "gross_income_limit_scale",
+    programs: ALL_PROGRAMS,
     group: "income-limits",
     label: "Gross income limit (130% FPL)",
     description: "Scale the 130% FPL gross income eligibility threshold table.",
@@ -120,6 +132,7 @@ export const LEVERS: LeverSpec[] = [
   },
   {
     id: "net_income_limit_scale",
+    programs: ALL_PROGRAMS,
     group: "income-limits",
     label: "Net income limit (100% FPL)",
     description: "Scale the 100% FPL net income eligibility threshold table.",
@@ -138,6 +151,7 @@ export const LEVERS: LeverSpec[] = [
   },
   {
     id: "co_bbce_limit_scale",
+    programs: ["co-snap"],
     group: "bbce",
     label: "Colorado BBCE limit (200% FPL)",
     description: "Scale Colorado's expanded categorical-eligibility gross-income limit.",
@@ -154,11 +168,39 @@ export const LEVERS: LeverSpec[] = [
       },
     ],
   },
+  {
+    id: "ny_bbce_150_limit_scale",
+    programs: ["ny-snap"],
+    group: "bbce",
+    label: "NY BBCE earned-income limit (150% FPL)",
+    description:
+      "Scale New York's expanded categorical-eligibility gross-income limit for households with earned income.",
+    baseline_label: "150% FPL",
+    min_multiplier: 0.5,
+    max_multiplier: 2,
+    step: 0.05,
+    build_overrides: (m) => [
+      {
+        repo: "rules-us-ny",
+        file_relative: NY_BBCE,
+        parameter: "ny_snap_categorical_eligibility_150_percent_fpl_ratio",
+        patch: { kind: "scale_formula", multiplier: m },
+      },
+    ],
+  },
 ];
 
-export function buildOverrides(multipliers: Record<string, number>): ParameterOverride[] {
+/** The levers that apply to one program (federal levers + that state's own). */
+export function leversForProgram(program: ProgramSlug): LeverSpec[] {
+  return LEVERS.filter((lever) => lever.programs.includes(program));
+}
+
+export function buildOverrides(
+  multipliers: Record<string, number>,
+  program: ProgramSlug,
+): ParameterOverride[] {
   const overrides: ParameterOverride[] = [];
-  for (const lever of LEVERS) {
+  for (const lever of leversForProgram(program)) {
     const m = multipliers[lever.id];
     if (m === undefined || m === 1) continue;
     overrides.push(...lever.build_overrides(m));

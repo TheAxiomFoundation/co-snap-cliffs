@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
@@ -15,7 +16,14 @@ import {
   YAxis,
 } from "recharts";
 
-import { LEVERS } from "@/lib/parameters";
+import { LEVERS, leversForProgram } from "@/lib/parameters";
+import {
+  DEFAULT_PROGRAM,
+  PROGRAM_SLUGS,
+  PROGRAMS,
+  type NyRegion,
+  type ProgramSlug,
+} from "@/lib/programs/registry";
 import type { SweepResult } from "@/lib/cliffs";
 
 interface Household {
@@ -26,6 +34,8 @@ interface Household {
   any_member_elderly_or_disabled: boolean;
   primary_member_is_us_citizen: boolean;
   liquid_resources: number;
+  /** NY only: which SUA region the household lives in. CO ignores it. */
+  region: NyRegion;
 }
 
 const DEFAULT_HH: Household = {
@@ -36,7 +46,14 @@ const DEFAULT_HH: Household = {
   any_member_elderly_or_disabled: false,
   primary_member_is_us_citizen: true,
   liquid_resources: 0,
+  region: "nyc",
 };
+
+const REGION_OPTIONS: Array<{ value: NyRegion; label: string }> = [
+  { value: "nyc", label: "New York City" },
+  { value: "nassau_suffolk", label: "Nassau & Suffolk" },
+  { value: "rest_of_state", label: "Rest of state" },
+];
 
 const DEFAULT_MULTIPLIERS = (): Record<string, number> =>
   Object.fromEntries(LEVERS.map((l) => [l.id, 1]));
@@ -57,7 +74,11 @@ function useIsNarrow(): boolean {
 }
 
 export default function Page() {
+  const [program, setProgram] = useState<ProgramSlug>(DEFAULT_PROGRAM);
   const [household, setHousehold] = useState<Household>(DEFAULT_HH);
+  // Levers shown for the selected state: the five federal levers plus that
+  // state's own BBCE lever.
+  const levers = useMemo(() => leversForProgram(program), [program]);
   // Two slider buckets:
   //   `reformMultipliers` is what the user is currently holding (cheap,
   //   updates on every onChange tick — drives the sliders themselves).
@@ -98,19 +119,31 @@ export default function Page() {
   // `reformDirty` is computed off applied state — same semantics as before
   // the Run button existed.
   const reformDirty = useMemo(
-    () => LEVERS.some((l) => appliedMultipliers[l.id] !== 1),
-    [appliedMultipliers],
+    () => levers.some((l) => appliedMultipliers[l.id] !== 1),
+    [levers, appliedMultipliers],
   );
 
   // `pendingChanges` is the count of levers whose current slider value
   // differs from what's been applied. Drives the Run button enable state.
   const pendingChanges = useMemo(
-    () => LEVERS.filter((l) => reformMultipliers[l.id] !== appliedMultipliers[l.id]).length,
-    [reformMultipliers, appliedMultipliers],
+    () => levers.filter((l) => reformMultipliers[l.id] !== appliedMultipliers[l.id]).length,
+    [levers, reformMultipliers, appliedMultipliers],
   );
+
+  // Switching states changes the program, the lever set, and (for NY) the
+  // meaning of the region field — reset the reform state so a Colorado
+  // reform doesn't linger invisibly under New York.
+  function switchProgram(next: ProgramSlug) {
+    if (next === program) return;
+    setProgram(next);
+    setReformMultipliers(DEFAULT_MULTIPLIERS());
+    setAppliedMultipliers(DEFAULT_MULTIPLIERS());
+    setReform(null);
+  }
 
   function requestSignature(multipliers: Record<string, number>): string {
     return JSON.stringify({
+      p: program,
       h: household,
       e: [earningsMax, step],
       m: multipliers,
@@ -124,10 +157,11 @@ export default function Page() {
     const inflight = inflightRef.current.get(key);
     if (inflight) return inflight;
     const promise = (async () => {
-      const r = await fetch("/snap/api/cliff-sweep", {
+      const r = await fetch("/gallery/snap/api/cliff-sweep", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          program,
           household,
           earnings_min: 0,
           earnings_max: earningsMax,
@@ -164,7 +198,7 @@ export default function Page() {
       }
     }, 200);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [household, earningsMax, step]);
+  }, [program, household, earningsMax, step]);
 
   // Reform fires on `appliedMultipliers` — slider drags don't trigger
   // refetches; only clicking Run does (via setAppliedMultipliers).
@@ -186,7 +220,7 @@ export default function Page() {
       }
     }, 50);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [household, earningsMax, step, appliedMultipliers, reformDirty]);
+  }, [program, household, earningsMax, step, appliedMultipliers, reformDirty]);
 
   // `run` is the retry handler the error banner button calls.
   function run() {
@@ -238,30 +272,42 @@ export default function Page() {
   return (
     <main className="relative z-10 mx-auto max-w-7xl px-4 pb-12 pt-5 sm:px-6">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3 border-b border-rule pb-4">
-        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-          <a href="https://axiomfoundation.org" className="inline-flex w-[88px] shrink-0 no-underline sm:w-[108px]">
+        <div className="flex min-w-0 items-center gap-3">
+          <a
+            href="https://axiom-foundation.org"
+            aria-label="Axiom Foundation"
+            className="inline-flex w-[100px] shrink-0 no-underline"
+          >
             <img
-              src="/snap/axiom-foundation.svg"
+              src="/gallery/snap/axiom-foundation.svg"
               alt="Axiom Foundation"
-              width={108}
+              width={100}
               className="block h-auto w-full"
             />
           </a>
-          <div className="min-w-0 border-l border-rule pl-3 sm:pl-4">
-            <div className="text-[10px] uppercase tracking-[0.22em] text-ink-muted">
-              Interactive · CDHS SNAP FY 2026
+          <Link href="/" className="min-w-0 border-l border-rule pl-3 no-underline">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted">
+              Interactive
             </div>
-            <h1 className="text-xl font-bold tracking-[-0.03em] text-ink sm:text-2xl">
-              CO&nbsp;SNAP&nbsp;cliffs
+            <h1 className="font-serif text-[16px] font-normal leading-tight text-ink">
+              Benefits&nbsp;cliff&nbsp;explorer
             </h1>
-          </div>
+          </Link>
         </div>
-        {loading && (
-          <div className="flex shrink-0 items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-muted">
-            <Spinner />
-            computing
-          </div>
-        )}
+        <div className="flex shrink-0 items-center gap-4">
+          <a
+            href="https://axiom.org/demos"
+            className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink-muted no-underline hover:text-accent hover:underline"
+          >
+            All&nbsp;demos
+          </a>
+          {loading && (
+            <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-muted">
+              <Spinner />
+              computing
+            </div>
+          )}
+        </div>
       </header>
 
       {err && (
@@ -294,6 +340,7 @@ export default function Page() {
                   household.oldest_member_age === DEFAULT_HH.oldest_member_age &&
                   household.monthly_shelter_costs === DEFAULT_HH.monthly_shelter_costs &&
                   household.liquid_resources === DEFAULT_HH.liquid_resources &&
+                  household.region === DEFAULT_HH.region &&
                   household.pays_separate_heating_or_cooling ===
                     DEFAULT_HH.pays_separate_heating_or_cooling &&
                   household.any_member_elderly_or_disabled ===
@@ -305,6 +352,25 @@ export default function Page() {
             }
           >
             <div className="space-y-2.5">
+              <RoomySelectRow
+                label="State"
+                hint="Which state's SNAP rules to run. Each state applies its own BBCE expansion and utility allowances on top of the federal framework."
+                value={program}
+                options={PROGRAM_SLUGS.map((slug) => ({
+                  value: slug,
+                  label: PROGRAMS[slug].label,
+                }))}
+                onChange={(v) => switchProgram(v as ProgramSlug)}
+              />
+              {program === "ny-snap" && (
+                <RoomySelectRow
+                  label="Region"
+                  hint="New York's heating/cooling Standard Utility Allowance varies by region: $1,062 in NYC, $988 in Nassau & Suffolk, $877 in the rest of the state (FY 2026)."
+                  value={household.region}
+                  options={REGION_OPTIONS}
+                  onChange={(v) => setHousehold({ ...household, region: v as NyRegion })}
+                />
+              )}
               <RoomyNumberRow
                 label="Household size"
                 hint="Number of people in the SNAP unit. Sets which row of the per-size benefit tables (max allotment, deduction, income limits) applies."
@@ -347,7 +413,7 @@ export default function Page() {
             <div className="mt-3 space-y-2 border-t border-rule pt-3">
               <RoomyCheck
                 label="Separate heating or cooling expense"
-                hint="Triggers the largest Standard Utility Allowance ($571 / mo in Colorado FY 2026), which feeds the excess-shelter deduction."
+                hint={PROGRAMS[program].hints.heatingCooling}
                 checked={household.pays_separate_heating_or_cooling}
                 onChange={(v) =>
                   setHousehold({ ...household, pays_separate_heating_or_cooling: v })
@@ -400,7 +466,7 @@ export default function Page() {
                 }}
                 disabled={
                   !reformDirty &&
-                  LEVERS.every((l) => reformMultipliers[l.id] === 1)
+                  levers.every((l) => reformMultipliers[l.id] === 1)
                 }
               >
                 reset
@@ -408,7 +474,7 @@ export default function Page() {
             }
           >
             <div>
-              {LEVERS.map((lever) => (
+              {levers.map((lever) => (
                 <CompactLeverRow
                   key={lever.id}
                   label={lever.label}
@@ -464,6 +530,22 @@ export default function Page() {
           />
         </section>
       </div>
+
+      <footer className="mt-10 border-t border-rule pt-4 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted">
+        <a
+          href="https://axiom-foundation.org"
+          className="no-underline hover:text-accent hover:underline"
+        >
+          Axiom Foundation
+        </a>
+        {" "}·{" "}
+        <a
+          href="https://axiom.org/demos"
+          className="no-underline hover:text-accent hover:underline"
+        >
+          All demos
+        </a>
+      </footer>
     </main>
   );
 }
@@ -591,6 +673,40 @@ function RoomyNumberRow({
           }`}
         />
       </span>
+    </label>
+  );
+}
+
+function RoomySelectRow({
+  label,
+  hint,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-2">
+      <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-ink-secondary">
+        <span className="min-w-0">{label}</span>
+        {hint && <Tip text={hint} />}
+      </span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-[152px] shrink-0 py-0.5 pl-1.5 pr-1 font-mono text-[12px]"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }

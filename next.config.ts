@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import path from "node:path";
 
 const config: NextConfig = {
-  basePath: "/snap",
+  basePath: "/gallery/snap",
   outputFileTracingRoot: path.resolve(__dirname),
   serverExternalPackages: ["js-yaml"],
 };

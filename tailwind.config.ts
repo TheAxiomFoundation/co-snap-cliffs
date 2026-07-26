@@ -16,6 +16,7 @@ export default {
       fontFamily: {
         sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
         mono: ["JetBrains Mono", "Fira Code", "ui-monospace", "Menlo", "monospace"],
+        serif: ["Newsreader", "Georgia", "Times New Roman", "serif"],
       },
       letterSpacing: {
         tightest: "-0.04em",
