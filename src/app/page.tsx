@@ -285,10 +285,7 @@ export default function Page() {
               className="block h-auto w-full"
             />
           </a>
-          <Link href="/" className="min-w-0 border-l border-rule pl-3 no-underline">
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted">
-              Interactive
-            </div>
+          <Link href="/" className="flex min-w-0 items-center self-stretch border-l border-rule pl-3 no-underline">
             <h1 className="font-serif text-[16px] font-normal leading-tight text-ink">
               Benefits&nbsp;cliff&nbsp;explorer
             </h1>
