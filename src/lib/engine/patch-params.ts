@@ -1,12 +1,17 @@
 /**
- * Apply parameter overrides to the CO SNAP RuleSpec tree.
+ * Apply parameter overrides to a program's RuleSpec trees.
  *
- * Strategy: copy the entire rules-us + rules-us-co trees (~1.3MB) to a
- * temp scratch dir, patch the YAMLs that hold the overridden parameters, and
- * return the path to the (untouched) root program YAML inside the scratch
- * tree. The engine's import resolution walks ancestors looking for `rules-us`
- * and `rules-us-co` — having both in the scratch dir means the patched
- * parameter values flow through to the compiled artifact.
+ * Strategy: copy the federal rules-us tree plus the selected state tree
+ * (~1.3MB) to a temp scratch dir, patch the YAMLs that hold the overridden
+ * parameters, and return the path to the (untouched) root program YAML inside
+ * the scratch tree.
+ *
+ * The scratch dirs MUST use the canonical `rulespec-us` / `rulespec-us-<state>`
+ * names: the engine resolves `us:` / `us-ny:` / `us-co:` imports by walking
+ * ancestors looking for a `rulespec-{prefix}` directory, and derives legal ids
+ * from a `rulespec-` path component after resolving symlinks. The dev-layout
+ * dirs engine/rules-us etc. are symlinks with non-canonical names, so a
+ * straight copy under those names would not compile.
  *
  * The full copy keeps the implementation simple; a 1.3MB tree copies in
  * ~50ms on a local SSD, so the total cost (copy + ~64ms compile) stays well
@@ -17,10 +22,17 @@ import path from "node:path";
 import os from "node:os";
 import yaml from "js-yaml";
 
+import type { ProgramSpec, StateRepo } from "../programs/registry";
+
 const ROOT = path.resolve(process.cwd());
-const RULES_US = path.join(ROOT, "engine/rules-us");
-const RULES_US_CO = path.join(ROOT, "engine/rules-us-co");
-const PROGRAM_REL = "policies/cdhs/snap/fy-2026-benefit-calculation.yaml";
+
+export type OverrideRepo = "rules-us" | StateRepo;
+
+const REPO_DIRS: Record<OverrideRepo, string> = {
+  "rules-us": path.join(ROOT, "engine/rules-us"),
+  "rules-us-co": path.join(ROOT, "engine/rules-us-co"),
+  "rules-us-ny": path.join(ROOT, "engine/rules-us-ny"),
+};
 
 /** One override targets a specific parameter inside a specific RuleSpec file.
  *
@@ -31,7 +43,7 @@ const PROGRAM_REL = "policies/cdhs/snap/fy-2026-benefit-calculation.yaml";
  *  `patch` describes what to change in that parameter's version-0 entry.
  */
 export interface ParameterOverride {
-  repo: "rules-us" | "rules-us-co";
+  repo: OverrideRepo;
   file_relative: string;
   parameter: string;
   patch:
@@ -103,16 +115,29 @@ async function copyDir(src: string, dst: string): Promise<void> {
   await fs.cp(src, dst, { recursive: true, dereference: true });
 }
 
-/** Write a patched rule tree and return the absolute path to the root program
- *  YAML inside it. Caller is responsible for not exploding the temp dir budget
- *  — small for now (each patch tree ~1.3MB). */
+/** Write a patched rule tree for `spec`'s program and return the absolute
+ *  path to the root program YAML inside it. Caller is responsible for not
+ *  exploding the temp dir budget — small for now (each patch tree ~1.3MB). */
 export async function writePatchedRulespec(
+  spec: ProgramSpec,
   overrides: ParameterOverride[],
 ): Promise<string> {
-  const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "co-snap-patches-"));
-  const dstUs = path.join(tmpRoot, "rules-us");
-  const dstUsCo = path.join(tmpRoot, "rules-us-co");
-  await Promise.all([copyDir(RULES_US, dstUs), copyDir(RULES_US_CO, dstUsCo)]);
+  const allowedRepos: OverrideRepo[] = ["rules-us", spec.stateRepo];
+  for (const ov of overrides) {
+    if (!allowedRepos.includes(ov.repo)) {
+      throw new Error(
+        `override repo ${ov.repo} is not valid for program ${spec.slug} (allowed: ${allowedRepos.join(", ")})`,
+      );
+    }
+  }
+
+  const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), `${spec.slug}-patches-`));
+  const dstUs = path.join(tmpRoot, spec.scratchUsName);
+  const dstState = path.join(tmpRoot, spec.scratchStateName);
+  await Promise.all([
+    copyDir(REPO_DIRS["rules-us"], dstUs),
+    copyDir(REPO_DIRS[spec.stateRepo], dstState),
+  ]);
 
   // Group overrides by file so we read/write each only once.
   const byFile = new Map<string, ParameterOverride[]>();
@@ -120,7 +145,7 @@ export async function writePatchedRulespec(
     const file =
       ov.repo === "rules-us"
         ? path.join(dstUs, ov.file_relative)
-        : path.join(dstUsCo, ov.file_relative);
+        : path.join(dstState, ov.file_relative);
     if (!byFile.has(file)) byFile.set(file, []);
     byFile.get(file)!.push(ov);
   }
@@ -145,5 +170,5 @@ export async function writePatchedRulespec(
     await fs.writeFile(file, out, "utf-8");
   }
 
-  return path.join(dstUsCo, PROGRAM_REL);
+  return path.join(dstState, spec.programRel);
 }

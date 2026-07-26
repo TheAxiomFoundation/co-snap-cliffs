@@ -1,5 +1,6 @@
 /**
- * Cliff sweep — evaluate CO SNAP across an earnings range and detect cliffs.
+ * Cliff sweep — evaluate a state SNAP program across an earnings range and
+ * detect cliffs.
  *
  * Strategy: build one ExecutionRequest with N entity_ids (one per earnings
  * point) so we get all results from a single engine spawn. The engine runs
@@ -15,13 +16,13 @@
  */
 import { runEngine } from "./engine/run";
 import {
-  ARTIFACT_SLUG,
   buildSweepRequest,
-  SURFACE_OUTPUTS,
-  type CoSnapFacts,
+  DEFAULT_PROGRAM,
+  PROGRAMS,
+  type HouseholdFacts,
+  type ProgramSlug,
   type SurfaceOutputName,
-} from "./programs/co-snap";
-import { CO_SNAP_BASE } from "./programs/co-snap-base";
+} from "./programs/registry";
 import { readOutput, type OutputValue } from "./engine/types";
 import type { ParameterOverride } from "./engine/patch-params";
 
@@ -49,7 +50,9 @@ export interface SweepResult {
 }
 
 export interface SweepOptions {
-  household: CoSnapFacts;
+  /** Which state program to sweep. Defaults to New York. */
+  program?: ProgramSlug;
+  household: HouseholdFacts;
   earnings_min?: number;
   earnings_max?: number;
   earnings_step?: number;
@@ -71,6 +74,8 @@ export async function runCliffSweep(opts: SweepOptions): Promise<SweepResult> {
   const step = opts.earnings_step ?? DEFAULTS.earnings_step;
   const threshold = opts.cliff_mtr_threshold ?? DEFAULTS.cliff_mtr_threshold;
   const overrides = opts.parameter_overrides ?? [];
+  const slug = opts.program ?? DEFAULT_PROGRAM;
+  const spec = PROGRAMS[slug];
 
   // Production fast path: send a ~150-byte payload to Modal's /cliff-sweep
   // endpoint; Modal builds the engine request server-side, runs, returns
@@ -82,7 +87,7 @@ export async function runCliffSweep(opts: SweepOptions): Promise<SweepResult> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        program: ARTIFACT_SLUG,
+        program: slug,
         household: opts.household,
         earnings_min: min,
         earnings_max: max,
@@ -101,11 +106,11 @@ export async function runCliffSweep(opts: SweepOptions): Promise<SweepResult> {
   const earningsPoints: number[] = [];
   for (let e = min; e <= max; e += step) earningsPoints.push(e);
 
-  const { request } = buildSweepRequest(opts.household, earningsPoints);
-  const response = await runEngine(ARTIFACT_SLUG, request, overrides);
+  const { request } = buildSweepRequest(spec, opts.household, earningsPoints);
+  const response = await runEngine(slug, request, overrides);
 
   const idForOutput = (name: SurfaceOutputName): string =>
-    (CO_SNAP_BASE.outputs_by_name as Record<string, string>)[name] ?? name;
+    spec.base.outputs_by_name[name] ?? name;
 
   const points: SweepPoint[] = response.results.map((r, idx) => {
     const get = (name: SurfaceOutputName): OutputValue | undefined => r.outputs[idForOutput(name)];

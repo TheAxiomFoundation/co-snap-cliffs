@@ -8,7 +8,7 @@ const TOOL_NAME = "co-snap-cliffs";
 export const metadata: Metadata = {
   title: "Benefits cliff explorer — Axiom Foundation",
   description:
-    "Explore Colorado SNAP benefits cliffs — adjust program parameters and see how the cliffs shift.",
+    "Explore SNAP benefits cliffs on real state rules — adjust program parameters and see how the cliffs shift.",
   icons: {
     icon: [
       { url: "/gallery/snap/favicon.svg", type: "image/svg+xml" },

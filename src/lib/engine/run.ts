@@ -18,6 +18,7 @@ import path from "node:path";
 
 import type { ExecutionRequest, ExecutionResponse } from "./types";
 import type { ParameterOverride } from "./patch-params";
+import { PROGRAMS, type ProgramSlug } from "../programs/registry";
 
 const ROOT = path.resolve(process.cwd());
 const BINARY =
@@ -31,7 +32,7 @@ const ENGINE_URL = process.env.AXIOM_ENGINE_URL?.replace(/\/$/, "");
 /** Single entry point. When `overrides` is empty, the prebuilt artifact is
  *  used; otherwise the engine compiles a patched program first. */
 export async function runEngine(
-  slug: string,
+  slug: ProgramSlug,
   request: ExecutionRequest,
   overrides: ParameterOverride[] = [],
 ): Promise<ExecutionResponse> {
@@ -39,7 +40,7 @@ export async function runEngine(
   if (overrides.length === 0) return runViaSubprocess(["run-compiled", "--artifact", await artifactPath(slug)], request);
   // Local override path: patch on disk, compile, run.
   const { writePatchedRulespec } = await import("./patch-params");
-  const programYaml = await writePatchedRulespec(overrides);
+  const programYaml = await writePatchedRulespec(PROGRAMS[slug], overrides);
   return runWithProgramLocal(programYaml, request);
 }
 

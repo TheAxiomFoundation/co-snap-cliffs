@@ -1,17 +1,26 @@
-"""Modal deployment for co-snap-cliffs.
+"""Modal deployment for the multi-state cliff explorer (co-snap + ny-snap).
 
-Hosts the ``axiom-rules-engine`` Rust binary plus the rulespec-us and
-rulespec-us-co trees, exposed as a single HTTP service the Vercel app calls.
+Hosts the ``axiom-rules-engine`` Rust binary plus per-program rulespec trees,
+exposed as a single HTTP service the Vercel app calls.
 
 Two execution paths share the same wire shape (``POST /run``):
 
-1. No parameter overrides → run the prebuilt ``co-snap.compiled.json``
+1. No parameter overrides → run the prebuilt ``<slug>.compiled.json``
    artifact baked into the image. Fast (no compile).
 2. Parameter overrides supplied → patch the in-image rulespec YAMLs
    in a per-request scratch tree, compile, run. Adds ~70 ms.
 
 The Vercel-hosted Next.js app proxies ``/api/cliff-sweep`` here; see
 ``src/lib/engine/run.ts``.
+
+Program layout: each program gets its own pinned pair of trees under
+``/opt/programs/<slug>/`` using the canonical ``rulespec-*`` dir names the
+engine's import resolution expects — ``rulespec-us`` (federal) next to
+``rulespec-us-co`` / ``rulespec-us-ny`` (state). The two programs pin
+*different* federal SHAs because each compiled base schema
+(src/lib/programs/*-base.ts) is bound to the exact input set its federal
+tree produces; bumping a federal pin requires regenerating that program's
+base module.
 
 Deploy:
     modal deploy modal_app.py
@@ -27,18 +36,58 @@ import modal
 
 app = modal.App("co-snap-cliffs")
 
-ENGINE_VERSION = "v4-thin-payload"
+ENGINE_VERSION = "v5-multi-state"
 
-# Pinned commit SHAs. Match finbot-snap-demo so the compiled-artifact input
-# slots line up with src/lib/programs/co-snap-base.ts (auto-generated from
-# the artifact). Bump together and re-generate co-snap-base.ts when upgrading.
-AXIOM_RULES_ENGINE_SHA = "9106f44e34ec3eae92a1adf2246560c5eac00094"
-RULESPEC_US_SHA = "2f3a30991e1f8279c2fa664e51f068a63d905591"
+# Pinned commit SHAs. The engine SHA matches the local dev binary
+# (axiom-rules @431039f, mirrored in the axiom-rules-engine repo) — it must
+# use the canonical `rulespec-{prefix}` repo-name resolution, which both the
+# NY compile and the scratch-tree override path rely on. Each program's
+# rulespec SHAs are bound to its generated base module
+# (src/lib/programs/<slug>-base.ts); bump them together and regenerate the
+# base via scripts/generate-program-base.py when upgrading.
+AXIOM_RULES_ENGINE_SHA = "431039f02d3fff60cd0c3c074f0ab4318042f002"
+# Colorado pair (unchanged since v4; co-snap-base.ts is bound to these).
+RULESPEC_US_CO_FEDERAL_SHA = "2f3a30991e1f8279c2fa664e51f068a63d905591"
 RULESPEC_US_CO_SHA = "ba00673d73c19f262d542cfa597b0b365a1313b7"
+# New York pair (ny-snap-base.ts is bound to these).
+RULESPEC_US_NY_FEDERAL_SHA = "4c24f37420928e5b210e0a5719642ef5d615493f"
+RULESPEC_US_NY_SHA = "96c07d23dfd0ef3958b52936cf39499824021583"
 
-PROGRAMS = [
-    ("co-snap", "rules-us-co/policies/cdhs/snap/fy-2026-benefit-calculation.yaml"),
-]
+DEFAULT_PROGRAM = "ny-snap"
+
+# slug -> (federal SHA, state repo name, state SHA, program yaml rel path)
+PROGRAMS = {
+    "co-snap": {
+        "federal_sha": RULESPEC_US_CO_FEDERAL_SHA,
+        "state_repo": "rulespec-us-co",
+        "state_sha": RULESPEC_US_CO_SHA,
+        "program_rel": "policies/cdhs/snap/fy-2026-benefit-calculation.yaml",
+    },
+    "ny-snap": {
+        "federal_sha": RULESPEC_US_NY_FEDERAL_SHA,
+        "state_repo": "rulespec-us-ny",
+        "state_sha": RULESPEC_US_NY_SHA,
+        "program_rel": "policies/otda/snap/fy-2026-benefit-calculation.yaml",
+    },
+}
+
+BIN_PATH = "/opt/axiom-rules-engine/target/release/axiom-rules-engine"
+
+_clone_and_compile = []
+for _slug, _cfg in PROGRAMS.items():
+    _root = f"/opt/programs/{_slug}"
+    _clone_and_compile += [
+        f"mkdir -p {_root}",
+        # rulespec-us.git carries the full rules-us history; the old federal
+        # pins predate the repo rename, so clone full and checkout.
+        f"git clone https://github.com/TheAxiomFoundation/rulespec-us.git {_root}/rulespec-us",
+        f"cd {_root}/rulespec-us && git checkout {_cfg['federal_sha']}",
+        f"git clone https://github.com/TheAxiomFoundation/{_cfg['state_repo']}.git {_root}/{_cfg['state_repo']}",
+        f"cd {_root}/{_cfg['state_repo']} && git checkout {_cfg['state_sha']}",
+        f"{BIN_PATH} compile "
+        f"--program {_root}/{_cfg['state_repo']}/{_cfg['program_rel']} "
+        f"--output /opt/artifacts/{_slug}.compiled.json",
+    ]
 
 image = (
     modal.Image.debian_slim(python_version="3.13")
@@ -51,30 +100,22 @@ image = (
         f"echo 'engine: {ENGINE_VERSION}'",
         "git clone https://github.com/TheAxiomFoundation/axiom-rules-engine.git /opt/axiom-rules-engine",
         f"cd /opt/axiom-rules-engine && git checkout {AXIOM_RULES_ENGINE_SHA}",
-        # Engine at this SHA looks for sibling dirs named `rules-{prefix}`
-        # via ancestor traversal — see candidate_rule_repo_roots in
-        # axiom-rules-engine/src/rulespec.rs. Clone to those names, not
-        # `rulespec-*`, or imports fail to resolve at compile time.
-        "git clone https://github.com/TheAxiomFoundation/rulespec-us.git /opt/rules-us",
-        f"cd /opt/rules-us && git checkout {RULESPEC_US_SHA}",
-        "git clone https://github.com/TheAxiomFoundation/rulespec-us-co.git /opt/rules-us-co",
-        f"cd /opt/rules-us-co && git checkout {RULESPEC_US_CO_SHA}",
         ". $HOME/.cargo/env && cd /opt/axiom-rules-engine && cargo build --release",
         "mkdir -p /opt/artifacts",
-        *[
-            f"/opt/axiom-rules-engine/target/release/axiom-rules compile "
-            f"--program /opt/{path} "
-            f"--output /opt/artifacts/{slug}.compiled.json"
-            for slug, path in PROGRAMS
-        ],
+        *_clone_and_compile,
     )
     .pip_install("fastapi>=0.109", "uvicorn>=0.27", "pydantic>=2.0", "pyyaml>=6.0", "ruamel.yaml>=0.18")
-    # The schema (input slots + output IDs) is generated locally from the
-    # compiled artifact by `bun run scripts/dump-co-snap-base.ts` and baked
+    # The schemas (input slots + output IDs) are generated locally from the
+    # compiled artifacts by `bun run scripts/dump-program-bases.ts` and baked
     # into the image so we don't ship a 100 KB payload on every request.
     .add_local_file(
         "engine/artifacts/co-snap-base.json",
         "/opt/co-snap-base.json",
+        copy=True,
+    )
+    .add_local_file(
+        "engine/artifacts/ny-snap-base.json",
+        "/opt/ny-snap-base.json",
         copy=True,
     )
 )
@@ -90,15 +131,16 @@ image = (
 def web():
     """HTTP wrapper around axiom-rules-engine.
 
-    POST /run    {program, request, overrides?}  → ExecutionResponse
-    GET  /health → {ok, programs, engine_version}
+    POST /run         {program, request, overrides?}  → ExecutionResponse
+    POST /cliff-sweep {program?, household, ...}      → SweepResult
+    GET  /health      → {ok, programs, engine_version}
     """
     import hashlib
     import json
-    import re
     import shutil
     import subprocess
     import tempfile
+    import time
     from collections import OrderedDict
     from pathlib import Path
     from typing import Any
@@ -114,18 +156,20 @@ def web():
     CACHE_MAX = 256
     cache: "OrderedDict[str, dict[str, Any]]" = OrderedDict()
 
-    BIN = "/opt/axiom-rules-engine/target/release/axiom-rules"
-    ARTIFACTS = {slug: f"/opt/artifacts/{slug}.compiled.json" for slug, _ in PROGRAMS}
+    BIN = BIN_PATH
+    ARTIFACTS = {slug: f"/opt/artifacts/{slug}.compiled.json" for slug in PROGRAMS}
 
-    # Schema baked into the image at build time. Mirrors src/lib/programs/
-    # co-snap-base.ts: input slots per entity (with dtype + default), and a
-    # map from short output names to legal RuleSpec IDs.
-    with open("/opt/co-snap-base.json") as _f:
-        CO_SNAP_BASE = json.load(_f)
-    HOUSEHOLD_INPUTS = CO_SNAP_BASE["household_inputs"]
-    PERSON_INPUTS = CO_SNAP_BASE["person_inputs"]
-    OUTPUTS_BY_NAME = CO_SNAP_BASE["outputs_by_name"]
-    # Outputs surfaced per sweep point. Mirrors SURFACE_OUTPUTS in co-snap.ts.
+    # Schemas baked into the image at build time. Mirror
+    # src/lib/programs/<slug>-base.ts: input slots per entity (with dtype +
+    # default), relations, and a map from short output names to legal ids.
+    BASES: dict[str, dict[str, Any]] = {}
+    for slug in PROGRAMS:
+        with open(f"/opt/{slug}-base.json") as _f:
+            BASES[slug] = json.load(_f)
+
+    # Outputs surfaced per sweep point. Mirrors SURFACE_OUTPUTS in
+    # src/lib/programs/registry.ts. Programs expose a subset — absent
+    # names are skipped per program.
     SURFACE_OUTPUTS = [
         "snap_regular_month_allotment",
         "snap_allotment",
@@ -136,29 +180,85 @@ def web():
         "snap_resource_eligible",
         "gross_income",
     ]
-    SURFACE_OUTPUT_IDS = [OUTPUTS_BY_NAME.get(n, n) for n in SURFACE_OUTPUTS]
-    RELATION_MEMBER_OF_HOUSEHOLD = (
-        "us:statutes/7/2012/j#relation.member_of_household"
-    )
-    SYNTHETIC_INPUT_PREFIX = "axiom:co-snap-fy-2026#input."
 
-    # Friendly fact → input slot mapping. Mirrors FRIENDLY_TO_SLOT in
-    # co-snap.ts. `None` = handled separately (period); a string sets a
-    # Household input; a {"person": [...]} sets a Person input on the
-    # primary member.
-    FRIENDLY_TO_SLOT: dict[str, Any] = {
-        "household_size": "household_size",
-        "monthly_earnings_per_adult": "employee_wages_received",
-        "monthly_unearned_income": "assistance_payments",
-        "monthly_shelter_costs": "household_shelter_costs_incurred",
-        "pays_separate_heating_or_cooling": (
-            "household_incurred_or_anticipated_heating_or_cooling_costs_separate_from_rent_or_mortgage"
-        ),
-        "liquid_resources": "liquid_resource_current_redemption_rate",
-        "oldest_member_age": {"person": ["member_age"]},
-        "any_member_elderly_or_disabled": {"person": ["snap_member_is_elderly_or_disabled"]},
-        "primary_member_is_us_citizen": {"person": ["member_is_us_citizen"]},
+    # Per-program request-building config. Mirrors PROGRAMS in
+    # src/lib/programs/registry.ts — every TS change here must stay in sync.
+    #   input_prefix: prefix for input legal ids (fragment is what matters).
+    #   relations:    asserted person→household for every household member.
+    #   friendly:     friendly fact → input slot binding. A string sets a
+    #                 Household input; {"household"|"person": [...]} fan out.
+    #   derive:       extra household overrides computed from the facts
+    #                 (e.g. NY region → residency booleans).
+    def _ny_region_overrides(facts: dict) -> dict:
+        region = facts.get("region") or "nyc"
+        return {
+            "household_resides_in_new_york_city": region == "nyc",
+            "household_resides_in_nassau_or_suffolk_county": region == "nassau_suffolk",
+            # 18 NYCRR 387.14(a)(5)(d): the 150% FPL expanded categorical
+            # path only applies to households with earned income budgeted
+            # for SNAP. Derive the flag from the sweep point's earnings.
+            "household_has_earned_income_budgeted_for_snap": (
+                float(facts.get("monthly_earnings_per_adult") or 0) > 0
+            ),
+        }
+
+    PROGRAM_CONFIG: dict[str, dict[str, Any]] = {
+        "co-snap": {
+            "input_prefix": "axiom:co-snap-fy-2026#input.",
+            "relations": BASES["co-snap"].get(
+                "relations", ["us:statutes/7/2012/j#relation.member_of_household"]
+            ),
+            "friendly": {
+                "household_size": "household_size",
+                "monthly_earnings_per_adult": "employee_wages_received",
+                "monthly_unearned_income": "assistance_payments",
+                "monthly_shelter_costs": "household_shelter_costs_incurred",
+                "pays_separate_heating_or_cooling": (
+                    "household_incurred_or_anticipated_heating_or_cooling_costs_separate_from_rent_or_mortgage"
+                ),
+                "liquid_resources": "liquid_resource_current_redemption_rate",
+                "oldest_member_age": {"person": ["member_age"]},
+                "any_member_elderly_or_disabled": {"person": ["snap_member_is_elderly_or_disabled"]},
+                "primary_member_is_us_citizen": {"person": ["member_is_us_citizen"]},
+            },
+            "derive": None,
+        },
+        "ny-snap": {
+            "input_prefix": BASES["ny-snap"]["input_prefix"],
+            "relations": BASES["ny-snap"]["relations"],
+            "friendly": {
+                "household_size": "household_size",
+                # NY takes both the gross and countable earned/unearned
+                # figures as inputs; the demo has no exclusions, so the same
+                # value feeds both slots.
+                "monthly_earnings_per_adult": {
+                    "household": [
+                        "snap_gross_monthly_earned_income",
+                        "snap_countable_earned_income",
+                    ]
+                },
+                "monthly_unearned_income": {
+                    "household": [
+                        "snap_total_monthly_unearned_income",
+                        "snap_countable_unearned_income",
+                    ]
+                },
+                "monthly_shelter_costs": "household_shelter_costs_incurred",
+                "pays_separate_heating_or_cooling": (
+                    "household_incurred_or_anticipated_heating_or_cooling_costs_separate_from_rent_or_mortgage"
+                ),
+                "liquid_resources": "snap_countable_financial_resources",
+                "oldest_member_age": {"person": ["member_age"]},
+                "any_member_elderly_or_disabled": {"person": ["snap_member_is_elderly_or_disabled"]},
+                "primary_member_is_us_citizen": {"person": ["member_is_us_citizen"]},
+            },
+            "derive": _ny_region_overrides,
+        },
     }
+
+    def surface_output_ids(slug: str) -> list[str]:
+        by_name = BASES[slug]["outputs_by_name"]
+        return [by_name[n] for n in SURFACE_OUTPUTS if n in by_name]
 
     def month_interval(period: str) -> tuple[dict, dict]:
         y, m = period.split("-")
@@ -183,11 +283,12 @@ def web():
             return {"kind": "date", "value": str(value)}
         return {"kind": "text", "value": str(value)}
 
-    def resolve_overrides(facts: dict) -> tuple[dict, dict]:
+    def resolve_overrides(slug: str, facts: dict) -> tuple[dict, dict]:
         """Return (household_overrides, primary_member_overrides) keyed by
-        input slot name. Same logic as resolveDefaults() in co-snap.ts."""
+        input slot name. Same logic as resolveDefaults() in registry.ts."""
+        cfg = PROGRAM_CONFIG[slug]
         hh, primary = {}, {}
-        for fact_key, binding in FRIENDLY_TO_SLOT.items():
+        for fact_key, binding in cfg["friendly"].items():
             v = facts.get(fact_key)
             if v is None:
                 continue
@@ -198,28 +299,33 @@ def web():
                     hh[slot] = v
                 for slot in binding.get("person") or []:
                     primary[slot] = v
+        if cfg["derive"]:
+            hh.update(cfg["derive"](facts))
         return hh, primary
 
     def build_sweep_request(
-        base_facts: dict, earnings_points: list[int]
+        slug: str, base_facts: dict, earnings_points: list[int]
     ) -> tuple[dict, str]:
-        """Port of buildSweepRequest from co-snap.ts. Builds N households, one
-        per earnings point, and returns the full ExecutionRequest."""
+        """Port of buildSweepRequest from registry.ts. Builds N households,
+        one per earnings point, and returns the full ExecutionRequest."""
+        cfg = PROGRAM_CONFIG[slug]
+        base = BASES[slug]
         period = base_facts.get("period") or "2026-01"
         interval, query_period = month_interval(period)
         inputs, relations, queries = [], [], []
+        output_ids = surface_output_ids(slug)
 
         size = max(1, int(base_facts.get("household_size") or 1))
         for idx, earnings in enumerate(earnings_points):
             facts = {**base_facts, "monthly_earnings_per_adult": earnings}
-            hh_over, primary_over = resolve_overrides(facts)
+            hh_over, primary_over = resolve_overrides(slug, facts)
             hh_id = f"household:{idx + 1}"
-            for slot in HOUSEHOLD_INPUTS:
+            for slot in base["household_inputs"]:
                 name = slot["name"]
                 v = hh_over.get(name, slot["default"])
                 inputs.append(
                     {
-                        "name": SYNTHETIC_INPUT_PREFIX + name,
+                        "name": cfg["input_prefix"] + name,
                         "entity": "Household",
                         "entity_id": hh_id,
                         "interval": interval,
@@ -228,20 +334,21 @@ def web():
                 )
             for i in range(size):
                 person_id = f"person:{idx + 1}:{i + 1}"
-                relations.append(
-                    {
-                        "name": RELATION_MEMBER_OF_HOUSEHOLD,
-                        "tuple": [person_id, hh_id],
-                        "interval": interval,
-                    }
-                )
+                for relation in cfg["relations"]:
+                    relations.append(
+                        {
+                            "name": relation,
+                            "tuple": [person_id, hh_id],
+                            "interval": interval,
+                        }
+                    )
                 overrides = primary_over if i == 0 else {}
-                for slot in PERSON_INPUTS:
+                for slot in base["person_inputs"]:
                     name = slot["name"]
                     v = overrides.get(name, slot["default"])
                     inputs.append(
                         {
-                            "name": SYNTHETIC_INPUT_PREFIX + name,
+                            "name": cfg["input_prefix"] + name,
                             "entity": "Person",
                             "entity_id": person_id,
                             "interval": interval,
@@ -252,7 +359,7 @@ def web():
                 {
                     "entity_id": hh_id,
                     "period": query_period,
-                    "outputs": SURFACE_OUTPUT_IDS,
+                    "outputs": output_ids,
                 }
             )
 
@@ -282,11 +389,12 @@ def web():
         return None
 
     def make_sweep_result(
-        engine_response: dict, earnings_points: list[int], cliff_threshold: float
+        slug: str, engine_response: dict, earnings_points: list[int], cliff_threshold: float
     ) -> dict:
         """Port of the post-engine MTR + cliff detection from cliffs.ts."""
+        outputs_by_name = BASES[slug]["outputs_by_name"]
         results = engine_response.get("results", [])
-        id_of = lambda short: OUTPUTS_BY_NAME.get(short, short)
+        id_of = lambda short: outputs_by_name.get(short, short)
         points = []
         for idx, r in enumerate(results):
             outs = r.get("outputs", {})
@@ -330,15 +438,20 @@ def web():
             "total_snap_at_zero_earnings": points[0]["snap"] if points else 0,
         }
         return {"points": points, "summary": summary, "ms": 0}
-    # Vercel sends override.repo as "rules-us" / "rules-us-co" matching the
-    # dev-mode layout. Accept either spelling.
-    REPO_DIR = {
-        "rules-us": "/opt/rules-us",
-        "rules-us-co": "/opt/rules-us-co",
-        "rulespec-us": "/opt/rules-us",
-        "rulespec-us-co": "/opt/rules-us-co",
+
+    # Vercel sends override.repo as "rules-us" / "rules-us-co" / "rules-us-ny"
+    # matching the dev-mode layout. Accept the canonical rulespec-* spellings
+    # too. Values are the canonical scratch/tree dir names.
+    REPO_CANONICAL = {
+        "rules-us": "rulespec-us",
+        "rules-us-co": "rulespec-us-co",
+        "rules-us-ny": "rulespec-us-ny",
+        "rulespec-us": "rulespec-us",
+        "rulespec-us-co": "rulespec-us-co",
+        "rulespec-us-ny": "rulespec-us-ny",
     }
-    PROGRAM_REL_BY_SLUG = {slug: rel for slug, rel in PROGRAMS}
+    PROGRAM_REL_BY_SLUG = {slug: cfg["program_rel"] for slug, cfg in PROGRAMS.items()}
+    STATE_REPO_BY_SLUG = {slug: cfg["state_repo"] for slug, cfg in PROGRAMS.items()}
 
     yaml_io = YAML()
     yaml_io.preserve_quotes = True
@@ -379,23 +492,33 @@ def web():
         else:
             raise ValueError(f"unknown patch kind: {kind!r}")
 
-    def write_patched_tree(overrides: list[dict[str, Any]]) -> Path:
-        """Build a scratch /tmp tree mirroring the on-image layout, with the
-        relevant YAMLs patched. Returns the scratch root."""
-        scratch = Path(tempfile.mkdtemp(prefix="co-snap-overrides-"))
+    def write_patched_tree(slug: str, overrides: list[dict[str, Any]]) -> Path:
+        """Build a scratch /tmp tree with the selected program's rulespec pair
+        (canonical rulespec-* names) and the relevant YAMLs patched. Returns
+        the scratch root."""
+        state_repo = STATE_REPO_BY_SLUG[slug]
+        allowed = {"rulespec-us", state_repo}
+        by_file: dict[Path, list[dict[str, Any]]] = {}
+        scratch = Path(tempfile.mkdtemp(prefix=f"{slug}-overrides-"))
         # Symlinks would be faster but the engine canonicalizes paths during
         # ancestor traversal for imports — a full copy of both repos (~1.3 MB)
         # is cheap (<50 ms) and avoids that landmine.
-        for src_name in ("rules-us", "rules-us-co"):
-            shutil.copytree(f"/opt/{src_name}", scratch / src_name)
+        src_root = Path(f"/opt/programs/{slug}")
+        for src_name in ("rulespec-us", state_repo):
+            shutil.copytree(src_root / src_name, scratch / src_name)
 
-        by_file: dict[Path, list[dict[str, Any]]] = {}
         for ov in overrides:
             repo = ov["repo"]
-            if repo not in REPO_DIR:
+            canonical = REPO_CANONICAL.get(repo)
+            if canonical is None:
                 raise HTTPException(400, f"unknown override repo: {repo!r}")
-            scratch_repo = "rules-us-co" if "us-co" in repo else "rules-us"
-            file = scratch / scratch_repo / ov["file_relative"]
+            if canonical not in allowed:
+                raise HTTPException(
+                    400,
+                    f"override repo {repo!r} is not valid for program {slug!r} "
+                    f"(allowed: {sorted(allowed)})",
+                )
+            file = scratch / canonical / ov["file_relative"]
             by_file.setdefault(file, []).append(ov)
 
         for file, file_overrides in by_file.items():
@@ -445,7 +568,34 @@ def web():
                 status_code=500, detail=f"could not parse engine output: {err}"
             )
 
-    api = FastAPI(title="co-snap-cliffs engine", version="0.1.0")
+    def run_with_overrides(
+        slug: str, overrides: list[dict[str, Any]], engine_request: dict
+    ) -> dict[str, Any]:
+        """Patch + compile + run for one request; cleans up the scratch tree."""
+        scratch = write_patched_tree(slug, overrides)
+        try:
+            program_yaml = scratch / STATE_REPO_BY_SLUG[slug] / PROGRAM_REL_BY_SLUG[slug]
+            artifact = scratch / f"{slug}.compiled.json"
+            compile_proc = subprocess.run(
+                [BIN, "compile", "--program", str(program_yaml), "--output", str(artifact)],
+                text=True,
+                capture_output=True,
+                timeout=30,
+            )
+            if compile_proc.returncode != 0:
+                raise HTTPException(
+                    500,
+                    f"compile failed ({compile_proc.returncode}): "
+                    f"{compile_proc.stderr.strip()}",
+                )
+            return run_engine(
+                [BIN, "run-compiled", "--artifact", str(artifact)],
+                json.dumps(engine_request),
+            )
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+    api = FastAPI(title="co-snap-cliffs engine", version="0.2.0")
 
     api.add_middleware(
         CORSMiddleware,
@@ -463,6 +613,7 @@ def web():
                 slug: {"artifact": path, "exists": Path(path).exists()}
                 for slug, path in ARTIFACTS.items()
             },
+            "default_program": DEFAULT_PROGRAM,
             "engine_version": ENGINE_VERSION,
         }
 
@@ -478,7 +629,7 @@ def web():
     @api.post("/run")
     async def run(request: Request):
         body = await request.json()
-        program = body.get("program")
+        program = body.get("program") or DEFAULT_PROGRAM
         engine_request = body.get("request")
         overrides = body.get("overrides") or []
         if program not in ARTIFACTS:
@@ -500,28 +651,7 @@ def web():
                 json.dumps(engine_request),
             )
         else:
-            scratch = write_patched_tree(overrides)
-            try:
-                program_yaml = scratch / PROGRAM_REL_BY_SLUG[program]
-                artifact = scratch / f"{program}.compiled.json"
-                compile_proc = subprocess.run(
-                    [BIN, "compile", "--program", str(program_yaml), "--output", str(artifact)],
-                    text=True,
-                    capture_output=True,
-                    timeout=30,
-                )
-                if compile_proc.returncode != 0:
-                    raise HTTPException(
-                        500,
-                        f"compile failed ({compile_proc.returncode}): "
-                        f"{compile_proc.stderr.strip()}",
-                    )
-                result = run_engine(
-                    [BIN, "run-compiled", "--artifact", str(artifact)],
-                    json.dumps(engine_request),
-                )
-            finally:
-                shutil.rmtree(scratch, ignore_errors=True)
+            result = run_with_overrides(program, overrides, engine_request)
 
         cache[key] = result
         if len(cache) > CACHE_MAX:
@@ -535,7 +665,7 @@ def web():
         overrides if supplied), computes MTR + cliff metrics, and returns
         the SweepResult that lib/cliffs.ts used to assemble on Vercel."""
         body = await request.json()
-        program = body.get("program", "co-snap")
+        program = body.get("program") or DEFAULT_PROGRAM
         household = body.get("household") or {}
         earnings_min = int(body.get("earnings_min") or 0)
         earnings_max = int(body.get("earnings_max") or 4000)
@@ -568,40 +698,19 @@ def web():
             return hit
 
         earnings_points = list(range(earnings_min, earnings_max + 1, earnings_step))
-        engine_request, _period = build_sweep_request(household, earnings_points)
+        engine_request, _period = build_sweep_request(program, household, earnings_points)
 
-        start_ms = int(__import__("time").monotonic() * 1000)
+        start_ms = int(time.monotonic() * 1000)
         if not overrides:
             engine_response = run_engine(
                 [BIN, "run-compiled", "--artifact", ARTIFACTS[program]],
                 json.dumps(engine_request),
             )
         else:
-            scratch = write_patched_tree(overrides)
-            try:
-                program_yaml = scratch / PROGRAM_REL_BY_SLUG[program]
-                artifact = scratch / f"{program}.compiled.json"
-                compile_proc = subprocess.run(
-                    [BIN, "compile", "--program", str(program_yaml), "--output", str(artifact)],
-                    text=True,
-                    capture_output=True,
-                    timeout=30,
-                )
-                if compile_proc.returncode != 0:
-                    raise HTTPException(
-                        500,
-                        f"compile failed ({compile_proc.returncode}): "
-                        f"{compile_proc.stderr.strip()}",
-                    )
-                engine_response = run_engine(
-                    [BIN, "run-compiled", "--artifact", str(artifact)],
-                    json.dumps(engine_request),
-                )
-            finally:
-                shutil.rmtree(scratch, ignore_errors=True)
+            engine_response = run_with_overrides(program, overrides, engine_request)
 
-        result = make_sweep_result(engine_response, earnings_points, cliff_threshold)
-        result["ms"] = int(__import__("time").monotonic() * 1000) - start_ms
+        result = make_sweep_result(program, engine_response, earnings_points, cliff_threshold)
+        result["ms"] = int(time.monotonic() * 1000) - start_ms
 
         cache[key] = result
         if len(cache) > CACHE_MAX:
