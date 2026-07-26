@@ -6,8 +6,9 @@ const GA_ID = "G-2YHG89FY0N";
 const TOOL_NAME = "co-snap-cliffs";
 
 export const metadata: Metadata = {
-  title: "CO SNAP Cliffs — Axiom Foundation",
-  description: "Adjust Colorado SNAP parameters and see how cliffs shift.",
+  title: "Benefits cliff explorer — Axiom Foundation",
+  description:
+    "Explore Colorado SNAP benefits cliffs — adjust program parameters and see how the cliffs shift.",
   icons: {
     icon: [
       { url: "/gallery/snap/favicon.svg", type: "image/svg+xml" },

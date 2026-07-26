@@ -239,7 +239,7 @@ export default function Page() {
     <main className="relative z-10 mx-auto max-w-7xl px-4 pb-12 pt-5 sm:px-6">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3 border-b border-rule pb-4">
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-          <a href="https://axiomfoundation.org" className="inline-flex w-[88px] shrink-0 no-underline sm:w-[108px]">
+          <a href="https://axiom-foundation.org" className="inline-flex w-[88px] shrink-0 no-underline sm:w-[108px]">
             <img
               src="/gallery/snap/axiom-foundation.svg"
               alt="Axiom Foundation"
@@ -252,16 +252,24 @@ export default function Page() {
               Interactive · CDHS SNAP FY 2026
             </div>
             <h1 className="text-xl font-bold tracking-[-0.03em] text-ink sm:text-2xl">
-              CO&nbsp;SNAP&nbsp;cliffs
+              Benefits&nbsp;cliff&nbsp;explorer
             </h1>
           </div>
         </div>
-        {loading && (
-          <div className="flex shrink-0 items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-muted">
-            <Spinner />
-            computing
-          </div>
-        )}
+        <div className="flex shrink-0 items-center gap-4">
+          <a
+            href="https://axiom-foundation.org/demos"
+            className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted no-underline hover:text-accent hover:underline"
+          >
+            All&nbsp;demos
+          </a>
+          {loading && (
+            <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-muted">
+              <Spinner />
+              computing
+            </div>
+          )}
+        </div>
       </header>
 
       {err && (
@@ -464,6 +472,22 @@ export default function Page() {
           />
         </section>
       </div>
+
+      <footer className="mt-10 border-t border-rule pt-4 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted">
+        <a
+          href="https://axiom-foundation.org"
+          className="no-underline hover:text-accent hover:underline"
+        >
+          Axiom Foundation
+        </a>
+        {" "}·{" "}
+        <a
+          href="https://axiom-foundation.org/demos"
+          className="no-underline hover:text-accent hover:underline"
+        >
+          All demos
+        </a>
+      </footer>
     </main>
   );
 }
