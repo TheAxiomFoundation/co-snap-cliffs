@@ -11,10 +11,10 @@ export const metadata: Metadata = {
     "Explore SNAP benefits cliffs on real state rules — adjust program parameters and see how the cliffs shift.",
   icons: {
     icon: [
-      { url: "/gallery/snap/favicon.svg", type: "image/svg+xml" },
-      { url: "/gallery/snap/axiom-icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/gallery/cliffs/favicon.svg", type: "image/svg+xml" },
+      { url: "/gallery/cliffs/axiom-icon-512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: "/gallery/snap/axiom-icon-512.png",
+    apple: "/gallery/cliffs/axiom-icon-512.png",
   },
 };
 

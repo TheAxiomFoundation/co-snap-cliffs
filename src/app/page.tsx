@@ -157,7 +157,7 @@ export default function Page() {
     const inflight = inflightRef.current.get(key);
     if (inflight) return inflight;
     const promise = (async () => {
-      const r = await fetch("/gallery/snap/api/cliff-sweep", {
+      const r = await fetch("/gallery/cliffs/api/cliff-sweep", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -279,7 +279,7 @@ export default function Page() {
             className="inline-flex w-[100px] shrink-0 no-underline"
           >
             <img
-              src="/gallery/snap/axiom-foundation.svg"
+              src="/gallery/cliffs/axiom-foundation.svg"
               alt="Axiom Foundation"
               width={100}
               className="block h-auto w-full"
