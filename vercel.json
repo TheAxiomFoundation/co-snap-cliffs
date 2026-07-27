@@ -4,17 +4,37 @@
   "redirects": [
     {
       "source": "/",
-      "destination": "https://axiom.org/gallery/snap",
+      "destination": "https://axiom.org/gallery/cliffs",
       "permanent": true
     },
     {
+      "source": "/cliffs",
+      "destination": "/gallery/cliffs",
+      "permanent": false
+    },
+    {
+      "source": "/cliffs/:path(.*)",
+      "destination": "/gallery/cliffs/:path(.*)",
+      "permanent": false
+    },
+    {
       "source": "/snap",
-      "destination": "/gallery/snap",
+      "destination": "/gallery/cliffs",
       "permanent": false
     },
     {
       "source": "/snap/:path(.*)",
-      "destination": "/gallery/snap/:path(.*)",
+      "destination": "/gallery/cliffs/:path(.*)",
+      "permanent": false
+    },
+    {
+      "source": "/gallery/snap",
+      "destination": "/gallery/cliffs",
+      "permanent": false
+    },
+    {
+      "source": "/gallery/snap/:path(.*)",
+      "destination": "/gallery/cliffs/:path(.*)",
       "permanent": false
     }
   ],
