@@ -28,7 +28,7 @@ Deploy:
 First deploy compiles Rust (~3-4 min); subsequent deploys reuse the cached
 layer unless ``ENGINE_VERSION`` changes.
 
-Deployed URL prints as ``https://policyengine--co-snap-cliffs-web.modal.run``;
+Deployed URL prints as ``https://policyengine--co-snap-cliffs.modal.run``;
 set that as ``AXIOM_ENGINE_URL`` on the Vercel project.
 """
 
