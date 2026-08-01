@@ -1,12 +1,12 @@
 # Deploy
 
-Two services, both under PolicyEngine accounts — same layout as
+Two services — the engine on Modal under the PolicyEngine workspace, the frontend on Vercel under the axiom-foundation scope — same layout as
 [finbot-snap-demo](https://github.com/TheAxiomFoundation/finbot-snap-demo/blob/main/DEPLOY.md):
 
 | Where | What | Why |
 |---|---|---|
 | **Modal** (`co-snap-cliffs`) | `axiom-rules-engine` binary + rulespec-us + rulespec-us-co + the compiled CO SNAP artifact, behind a `POST /run` endpoint that supports parameter overrides via patch-and-recompile. | Vercel can't run native binaries or hold the rule trees on disk. |
-| **Vercel** (`co-snap-cliffs`) | Next.js app — household form, reform sliders, three Recharts panels, the `/api/cliff-sweep` route that proxies to Modal. | Standard Next.js deploy target. |
+| **Vercel** (`axiom-co-snap`, served at axiom.org/gallery/cliffs) | Next.js app — household form, reform sliders, three Recharts panels, the `/api/cliff-sweep` route that proxies to Modal. | Standard Next.js deploy target. |
 
 Vercel reads the Modal URL from `AXIOM_ENGINE_URL`. Locally, when that env
 var is unset, the dev server spawns the binary directly — so `bun run dev`
@@ -27,20 +27,22 @@ modal deploy modal_app.py
 Modal prints a public URL of the form:
 
 ```
-https://policyengine--co-snap-cliffs-web.modal.run
+https://policyengine--co-snap-cliffs.modal.run
 ```
+
+> The hostname is the Modal function label — modal_app.py sets `asgi_app(label="co-snap-cliffs")`, so the URL carries no `-web` suffix. Rename the label and every literal here rots: trust the URL `modal deploy` prints.
 
 Copy it. Verify it works:
 
 ```bash
-curl https://policyengine--co-snap-cliffs-web.modal.run/health
+curl https://policyengine--co-snap-cliffs.modal.run/health
 # → { "ok": true, "binary": "...", "programs": { "co-snap": { "exists": true } } }
 ```
 
 A `POST /run` smoke test (baseline, no overrides):
 
 ```bash
-curl -sS -X POST https://policyengine--co-snap-cliffs-web.modal.run/run \
+curl -sS -X POST https://policyengine--co-snap-cliffs.modal.run/run \
   -H "Content-Type: application/json" \
   -d '{
     "program": "co-snap",
@@ -58,10 +60,12 @@ To re-deploy after a `rulespec-us-co` change, bump `ENGINE_VERSION` in
 ## 2. Deploy the frontend to Vercel
 
 ```bash
-# One-time: link this repo to a Vercel project under the PolicyEngine team.
+# One-time: link to the serving project under the axiom-foundation team.
+# (The separate co-snap-cliffs Vercel project only redirects into the
+# gallery — see vercel.json in this repo.)
 npm i -g vercel
 vercel login
-vercel link --scope policyengine
+vercel link --scope axiom-foundation --project axiom-co-snap
 ```
 
 Set the env var Vercel needs:
