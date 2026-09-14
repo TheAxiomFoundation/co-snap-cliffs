@@ -718,22 +718,3 @@ def web():
         return result
 
     return api
-
-
-# Scheduled function that pings the web app every 4 minutes. Modal's
-# scaledown_window is 5 min, so this keeps the container warm indefinitely
-# without paying for a min_containers=1 reservation.
-@app.function(
-    image=image,
-    schedule=modal.Period(minutes=4),
-    timeout=30,
-)
-def keepwarm() -> dict:
-    import urllib.request
-
-    url = "https://policyengine--co-snap-cliffs.modal.run/health"
-    try:
-        with urllib.request.urlopen(url, timeout=20) as resp:
-            return {"status": resp.status, "ok": True}
-    except Exception as err:  # noqa: BLE001
-        return {"ok": False, "error": str(err)}
