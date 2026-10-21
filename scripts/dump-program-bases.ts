@@ -6,7 +6,7 @@
  *
  * Usage: bun run scripts/dump-program-bases.ts
  */
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { CO_SNAP_BASE } from "../src/lib/programs/co-snap-base";
 import { NY_SNAP_BASE } from "../src/lib/programs/ny-snap-base";
 
@@ -14,6 +14,9 @@ const BASES = [
   ["co-snap", CO_SNAP_BASE],
   ["ny-snap", NY_SNAP_BASE],
 ] as const;
+
+// engine/ is gitignored, so a fresh checkout has no artifacts dir yet.
+mkdirSync("engine/artifacts", { recursive: true });
 
 for (const [slug, base] of BASES) {
   const out = `engine/artifacts/${slug}-base.json`;
