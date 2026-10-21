@@ -5,7 +5,7 @@ Two services — the engine on Modal under the PolicyEngine workspace, the front
 
 | Where | What | Why |
 |---|---|---|
-| **Modal** (`co-snap-cliffs`) | `axiom-rules-engine` binary + rulespec-us + rulespec-us-co + the compiled CO SNAP artifact, behind a `POST /run` endpoint that supports parameter overrides via patch-and-recompile. | Vercel can't run native binaries or hold the rule trees on disk. |
+| **Modal** (`co-snap-cliffs`) | `axiom-rules-engine` binary + the pinned rulespec trees and prebuilt artifacts for CO and NY SNAP, behind `POST /cliff-sweep` and `POST /run` (`engine_service.py`). Parameter overrides patch the trees in place, compile, and restore. | Vercel can't run native binaries or hold the rule trees on disk. |
 | **Vercel** (`axiom-co-snap`, served at axiom.org/gallery/cliffs) | Next.js app — household form, reform sliders, three Recharts panels, the `/api/cliff-sweep` route that proxies to Modal. | Standard Next.js deploy target. |
 
 Vercel reads the Modal URL from `AXIOM_ENGINE_URL`. Locally, when that env
@@ -19,10 +19,19 @@ still works without either service.
 pip install modal
 modal token set --token-id <id> --token-secret <secret>   # PolicyEngine workspace
 
-# Deploy. First build compiles Rust (~3-4 min). Subsequent deploys reuse
-# the cached layer unless ENGINE_VERSION in modal_app.py changes.
+# The image bakes the program schemas from engine/artifacts (gitignored).
+# Regenerate them from the committed TS base modules first.
+bun run scripts/dump-program-bases.ts
+
+# Deploy. An engine-layer rebuild compiles Rust (~3-4 min); a pin or
+# TREES_VERSION bump in engine_pins.py / modal_app.py rebuilds only the
+# trees layer.
 modal deploy modal_app.py
 ```
+
+To try a change before it replaces production, `modal serve modal_app.py`
+serves it as an ephemeral app at
+`https://policyengine--co-snap-cliffs-dev.us-east.modal.run` until you stop it.
 
 Modal prints a public URL of the form:
 
@@ -54,8 +63,20 @@ curl -sS -X POST https://policyengine--co-snap-cliffs.modal.run/run \
   }' | head -c 200
 ```
 
-To re-deploy after a `rulespec-us-co` change, bump `ENGINE_VERSION` in
-`modal_app.py` and run `modal deploy` again.
+To move a rulespec pin, edit `engine_pins.py`, regenerate the program's
+base module (`scripts/generate-program-base.py`), and redeploy. `/health`
+reports a `prewarm` state per program: `ok` means the in-place tree
+compiles to the baked artifact byte for byte; `mismatch` means it drifted.
+
+### Cold starts
+
+The app scales to zero five minutes after the last request. A cold
+container boots in ~4-5 s and starts a background prewarm that compiles
+each program once. Measured on 2026-10-21: a reform as the very first
+request on a cold container answered in 3.3 s, and reforms on a warm one
+in 0.3-0.8 s, concurrent requests included. (The old per-request copy of
+both rulespec trees took 72-90 s on a cold container, past Vercel's 60 s
+function limit; see `engine_service.py`.)
 
 ## 2. Deploy the frontend to Vercel
 
@@ -74,13 +95,14 @@ Set the env var Vercel needs:
 vercel env add AXIOM_ENGINE_URL   # paste the Modal URL, all envs
 ```
 
-Deploy:
+Deploy (the project has no Git integration, so merges to `main` do not
+ship the frontend; deploy from an up-to-date `main` checkout):
 
 ```bash
-vercel --prod
+vercel --prod --scope axiom-foundation
 ```
 
 After Vercel deploys, the Next.js `/api/cliff-sweep` route picks up
 `AXIOM_ENGINE_URL` and proxies every request to Modal — no local binary
-needed. The slider sweep round-trip is bound by the Modal HTTP call
-(~70 ms with overrides, ~30 ms without, plus network).
+needed. The route gives up on Modal after 50 s and answers 504, and the
+page retries a gateway error once before showing it.
