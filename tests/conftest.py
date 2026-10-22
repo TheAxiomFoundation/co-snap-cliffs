@@ -15,7 +15,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from engine_service import ServiceConfig, apply_patch, make_yaml  # noqa: E402
+from engine_service import ServiceConfig  # noqa: E402
 
 FAKE_ENGINE = Path(__file__).resolve().parent / "fake_engine.py"
 
@@ -148,16 +148,73 @@ def tree_digest(root: Path) -> dict[str, str]:
     }
 
 
+# --- The pre-fix override path, verbatim from origin/main's modal_app.py ---
+# (14bbf6c), kept independent of engine_service so differential tests compare
+# the new service against the old code, not against itself.
+
+REFERENCE_REPO_CANONICAL = {
+    "rules-us": "rulespec-us",
+    "rules-us-co": "rulespec-us-co",
+    "rules-us-ny": "rulespec-us-ny",
+    "rulespec-us": "rulespec-us",
+    "rulespec-us-co": "rulespec-us-co",
+    "rulespec-us-ny": "rulespec-us-ny",
+}
+
+
+def reference_yaml():
+    from ruamel.yaml import YAML
+
+    yaml_io = YAML()
+    yaml_io.preserve_quotes = True
+    yaml_io.indent(mapping=2, sequence=4, offset=2)
+    yaml_io.width = 4096
+    return yaml_io
+
+
+def reference_apply_patch(rule, patch) -> None:
+    version = rule.get("versions", [None])[0]
+    if version is None:
+        raise ValueError(f"parameter {rule.get('name')} has no versions")
+    kind = patch["kind"]
+    if kind == "scale_values":
+        values = version.get("values")
+        if values is None:
+            raise ValueError(f"parameter {rule.get('name')} has no values to scale")
+        m = float(patch["multiplier"])
+        for k in list(values.keys()):
+            values[k] = round(values[k] * m)
+    elif kind == "set_values":
+        values = version.setdefault("values", {})
+        for k, v in patch["values"].items():
+            values[k] = v
+    elif kind == "scale_formula":
+        formula = version.get("formula")
+        if formula is None:
+            raise ValueError(f"parameter {rule.get('name')} has no formula")
+        try:
+            n = float(formula)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"scale_formula only supports numeric-literal formulas; "
+                f"{rule.get('name')} = {formula!r}"
+            )
+        m = float(patch["multiplier"])
+        version["formula"] = f"{round(n * m * 100) / 100}"
+    elif kind == "set_formula":
+        version["formula"] = patch["formula"]
+    else:
+        raise ValueError(f"unknown patch kind: {kind!r}")
+
+
 def reference_compile(
     bin_path: str, program_dir: Path, cfg: dict, overrides: list[dict], out: Path
 ) -> bytes:
-    """The pre-fix override path, kept as the reference implementation:
-    copy the program's trees to a scratch dir, patch the copies, compile."""
+    """The pre-fix override path: copy the program's trees to a scratch dir,
+    patch the copies, compile."""
     import tempfile
 
-    from engine_service import REPO_CANONICAL
-
-    yaml_io = make_yaml()
+    yaml_io = reference_yaml()
     scratch = Path(tempfile.mkdtemp(prefix="reference-"))
     try:
         for name in ("rulespec-us", cfg["state_repo"]):
@@ -165,13 +222,13 @@ def reference_compile(
         by_file: dict[Path, list[dict]] = {}
         for ov in overrides:
             by_file.setdefault(
-                scratch / REPO_CANONICAL[ov["repo"]] / ov["file_relative"], []
+                scratch / REFERENCE_REPO_CANONICAL[ov["repo"]] / ov["file_relative"], []
             ).append(ov)
         for file, file_overrides in by_file.items():
             doc = yaml_io.load(file.read_text())
             for ov in file_overrides:
                 rule = next(r for r in doc["rules"] if r.get("name") == ov["parameter"])
-                apply_patch(rule, ov["patch"])
+                reference_apply_patch(rule, ov["patch"])
             with file.open("w") as f:
                 yaml_io.dump(doc, f)
         subprocess.run(

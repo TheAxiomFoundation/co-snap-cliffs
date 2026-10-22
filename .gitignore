@@ -9,7 +9,7 @@ out/
 # Engine clones + build artifacts (bootstrapped by scripts/setup-engine.sh).
 # Whole `engine/` subtree is generated — checkouts, build outputs, compiled
 # artifacts, and the dev symlinks all live there.
-engine/
+/engine/
 
 # Python
 __pycache__/

@@ -247,15 +247,22 @@ export default function Page() {
     (async () => {
       startLoad();
       try {
-        const b = await fetchSweep(DEFAULT_MULTIPLIERS());
-        if (baselineGate.isCurrent(baselineTicket)) setBaseline(b);
-        if (reformDirty) {
-          const r = await fetchSweep(appliedMultipliers);
-          if (reformGate.isCurrent(reformTicket)) setReform(r);
+        // Each step reports its own error only while its ticket is current,
+        // so a retry superseded by a newer request can't raise a stale banner.
+        try {
+          const b = await fetchSweep(DEFAULT_MULTIPLIERS());
+          if (baselineGate.isCurrent(baselineTicket)) setBaseline(b);
+        } catch (e) {
+          if (baselineGate.isCurrent(baselineTicket)) setErr((e as Error).message);
+          return;
         }
-      } catch (e) {
-        if (baselineGate.isCurrent(baselineTicket) || reformGate.isCurrent(reformTicket)) {
-          setErr((e as Error).message);
+        if (reformDirty) {
+          try {
+            const r = await fetchSweep(appliedMultipliers);
+            if (reformGate.isCurrent(reformTicket)) setReform(r);
+          } catch (e) {
+            if (reformGate.isCurrent(reformTicket)) setErr((e as Error).message);
+          }
         }
       } finally {
         endLoad();

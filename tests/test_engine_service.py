@@ -3,7 +3,8 @@
 Invariants under test, for every input:
   I1  Isolation: an override compile sees exactly its own overrides, even
       with other compiles in flight — the artifact equals the one the
-      pre-fix copy-based path (conftest.reference_compile) produces.
+      pre-fix copy-based path produces (conftest.reference_compile, the old
+      code copied verbatim, so the comparison is new vs old).
   I2  Restoration: once requests finish, every program tree holds its
       original bytes, including after rejected and failed compiles.
   I3  Rejection leaves no trace: an invalid override never touches disk.
@@ -86,6 +87,10 @@ def sweep(service: EngineService, overrides: list[dict], program="ny-snap", **ho
             "overrides": overrides,
         }
     )
+
+
+def prewarm_states(service: EngineService) -> dict[str, str]:
+    return {slug: p["prewarm"]["state"] for slug, p in service.health()["programs"].items()}
 
 
 EMPTY_REQUEST = {"mode": "explain", "dataset": {"inputs": [], "relations": []}, "queries": []}
@@ -187,7 +192,9 @@ def test_programs_patch_their_own_trees(fake_layout):
         ),
     ],
 )
-def test_invalid_override_is_rejected_without_touching_disk(fake_layout, engine_log, override, message):
+def test_invalid_override_is_rejected_without_touching_disk(
+    fake_layout, engine_log, monkeypatch, override, message
+):
     before = fake_layout.digest()
     service = EngineService(fake_layout.config())
     full = {
@@ -195,9 +202,20 @@ def test_invalid_override_is_rejected_without_touching_disk(fake_layout, engine_
         "patch": {"kind": "scale_values", "multiplier": 2},
         **override,
     }
+    # Record every write, so "wrote then restored" can't pass for "never wrote".
+    writes: list[Path] = []
+    for name in ("write_text", "write_bytes"):
+        real = getattr(Path, name)
+
+        def spy(self, *args, _real=real, **kwargs):
+            writes.append(self)
+            return _real(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, name, spy)
     # A valid override in the same request must not be written either.
     with pytest.raises(OverrideError, match=message):
         sweep(service, max_allotment(1.5) + [full])
+    assert writes == []
     assert fake_layout.digest() == before
     assert "compile" not in engine_log.read_text().split()
 
@@ -206,10 +224,51 @@ def test_sweep_bounds_are_enforced(fake_layout):
     service = EngineService(fake_layout.config())
     with pytest.raises(OverrideError, match="points"):
         service.cliff_sweep({"earnings_max": 10**9, "earnings_step": 1})
+    with pytest.raises(OverrideError, match="points"):
+        service.cliff_sweep({"earnings_max": 10**400})  # len(range) overflows
     with pytest.raises(OverrideError, match="household_size"):
         service.cliff_sweep({"household": {"household_size": 500}})
     with pytest.raises(OverrideError, match="unknown program"):
         service.cliff_sweep({"program": "tx-snap"})
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"earnings_max": "abc"},
+        {"earnings_step": 0.5},  # int() → 0, below the minimum step
+        {"cliff_mtr_threshold": "abc"},
+        {"cliff_mtr_threshold": math.inf},
+        {"household": {"household_size": "three"}},
+        {"household": {"monthly_shelter_costs": "lots"}},
+        {"household": {"monthly_shelter_costs": 10**400}},
+        {"overrides": max_allotment(10**400)},
+        {"overrides": "max_allotment"},
+        {"household": ["not", "an", "object"]},
+    ],
+)
+def test_bad_values_answer_400_not_500(fake_layout, body):
+    before = fake_layout.digest()
+    service = EngineService(fake_layout.config())
+    with pytest.raises(OverrideError):
+        service.cliff_sweep({"program": "ny-snap", **body})
+    assert fake_layout.digest() == before
+
+
+def test_direct_callers_keep_the_old_defaulting(fake_layout):
+    """Falsy values mean "default", as in the pre-fix service."""
+    service = EngineService(fake_layout.config())
+    default = service.cliff_sweep({"program": "ny-snap"})
+    assert len(default["points"]) == 41  # 0..4000 by 100
+    zeros = service.cliff_sweep(
+        {"program": "ny-snap", "earnings_max": 0, "earnings_step": 0, "cliff_mtr_threshold": 0}
+    )
+    assert zeros["points"] == default["points"]
+    assert zeros["summary"] == default["summary"]
+    empty = service.cliff_sweep({"program": "ny-snap", "earnings_min": 500, "earnings_max": 100})
+    assert empty["points"] == []
+    for size in (0, "3", 3.0):
+        service.cliff_sweep({"program": "ny-snap", "household": {"household_size": size}})
 
 
 # -- I2: failed compiles -----------------------------------------------------
@@ -272,6 +331,61 @@ def test_artifact_evicted_before_spawn_is_recompiled(fake_layout, engine_log):
     assert engine_log.read_text().split() == ["compile", "run-compiled", "compile", "run-compiled"]
 
 
+def test_cache_entry_with_a_missing_file_heals(fake_layout, engine_log):
+    service = EngineService(fake_layout.config())
+    artifact, _ = service.compiled_artifact("ny-snap", max_allotment(1.5))
+    artifact.unlink()
+    again, fresh = service.compiled_artifact("ny-snap", max_allotment(1.5))
+    assert fresh and again.exists()
+    assert engine_log.read_text().split() == ["compile", "compile"]
+
+
+def test_eviction_cannot_delete_a_concurrent_recompile(fake_layout, monkeypatch):
+    """A co-snap put evicts a ny-snap entry while ny-snap recompiles that
+    same reform. The eviction's unlink must not land on the new file."""
+    service = EngineService(fake_layout.config(compiled_cache_max=1))
+    ny_reform = max_allotment(1.5)
+    service.compiled_artifact("ny-snap", ny_reform)  # the entry to evict
+    unlinking = threading.Event()
+    real_unlink = Path.unlink
+
+    def slow_unlink(self, missing_ok=False):
+        if self.name.endswith(".compiled.json"):
+            unlinking.set()
+            time.sleep(0.5)  # a stalled eviction
+        return real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", slow_unlink)
+    evictor = threading.Thread(target=service.compiled_artifact, args=("co-snap", max_allotment(2)))
+    evictor.start()
+    assert unlinking.wait(10)
+    recompiled, _ = service.compiled_artifact("ny-snap", ny_reform)
+    evictor.join()
+    assert recompiled.exists()
+    result = service.execute("ny-snap", ny_reform, EMPTY_REQUEST)
+    assert result["fake"]["parameters"]["snap_maximum_allotment_table"]["values"]["1"] == 447
+
+
+def test_prewarm_waits_for_an_in_flight_override_compile(fake_layout, monkeypatch):
+    """Prewarm compiles the unpatched tree, so it must hold the tree lock;
+    otherwise it compiles mid-patch and reports a false mismatch."""
+    monkeypatch.setenv("FAKE_ENGINE_COMPILE_DELAY", "1")
+    service = EngineService(fake_layout.config(prewarm=True))
+    pristine = fake_layout.digest()
+    reform = threading.Thread(
+        target=service.compiled_artifact, args=("ny-snap", max_allotment(1.5))
+    )
+    reform.start()
+    deadline = time.monotonic() + 10
+    while fake_layout.digest() == pristine:  # wait until the tree is patched
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+    service.prewarm()
+    reform.join()
+    assert prewarm_states(service) == {"co-snap": "ok", "ny-snap": "ok"}
+    assert fake_layout.digest() == pristine
+
+
 def test_compiled_cache_is_bounded(fake_layout):
     service = EngineService(fake_layout.config(compiled_cache_max=2))
     paths = [service.compiled_artifact("ny-snap", max_allotment(m))[0] for m in (1.1, 1.2, 1.3)]
@@ -279,10 +393,6 @@ def test_compiled_cache_is_bounded(fake_layout):
 
 
 # -- prewarm -----------------------------------------------------------------
-
-
-def prewarm_states(service: EngineService) -> dict[str, str]:
-    return {slug: p["prewarm"]["state"] for slug, p in service.health()["programs"].items()}
 
 
 def test_prewarm_reports_ok_and_detects_drift(fake_layout):
@@ -309,6 +419,13 @@ def test_scale_values_rounds_each_value(values, multiplier):
     rule = {"name": "t", "versions": [{"values": dict(values)}]}
     apply_patch(rule, {"kind": "scale_values", "multiplier": multiplier})
     assert rule["versions"][0]["values"] == {k: round(v * multiplier) for k, v in values.items()}
+
+
+def test_set_values_keeps_values_as_given():
+    rule = {"name": "t", "versions": [{"values": {1: 100}}]}
+    apply_patch(rule, {"kind": "set_values", "values": {1: 300, 2: 412.5}})
+    values = rule["versions"][0]["values"]
+    assert values == {1: 300, 2: 412.5} and isinstance(values[1], int)
 
 
 @given(values=st.dictionaries(st.integers(1, 12), st.integers(0, 5000), min_size=1, max_size=8))

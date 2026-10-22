@@ -38,6 +38,7 @@ import io
 import json
 import logging
 import math
+import os
 import subprocess
 import tempfile
 import threading
@@ -414,9 +415,15 @@ def make_yaml():
 
 
 def _finite_number(value: Any, what: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise OverrideError(f"{what} must be a finite number, got {value!r}")
-    return float(value)
+    try:
+        number = float(value)
+    except OverflowError:
+        number = math.inf
+    if not math.isfinite(number):
+        raise OverrideError(f"{what} must be a finite number, got {value!r}")
+    return number
 
 
 def apply_patch(rule: dict[str, Any], patch: Any) -> None:
@@ -441,7 +448,8 @@ def apply_patch(rule: dict[str, Any], patch: Any) -> None:
             raise OverrideError("set_values needs a values object")
         values = version.setdefault("values", {})
         for k, v in new_values.items():
-            values[k] = _finite_number(v, f"values[{k!r}]")
+            _finite_number(v, f"values[{k!r}]")
+            values[k] = v  # as given, so 300 stays 300 in the YAML
     elif kind == "scale_formula":
         formula = version.get("formula")
         if formula is None:
@@ -608,19 +616,24 @@ class CompiledCache:
     def get(self, key: str) -> Path | None:
         with self._lock:
             path = self._entries.get(key)
-            if path is not None:
-                self._entries.move_to_end(key)
+            if path is None:
+                return None
+            if not path.exists():
+                # The file is gone; forget the entry so the caller compiles
+                # again rather than handing out a dead path forever.
+                del self._entries[key]
+                return None
+            self._entries.move_to_end(key)
             return path
 
     def put(self, key: str, path: Path) -> None:
-        evicted: list[Path] = []
+        # Evicted files are unlinked under the lock, so an eviction can't
+        # land after a concurrent recompile of the same key and delete it.
         with self._lock:
             self._entries[key] = path
             self._entries.move_to_end(key)
             while len(self._entries) > self.max:
-                evicted.append(self._entries.popitem(last=False)[1])
-        for p in evicted:
-            p.unlink(missing_ok=True)
+                self._entries.popitem(last=False)[1].unlink(missing_ok=True)
 
 
 class ResultCache:
@@ -654,13 +667,16 @@ class ResultCache:
 # ---------------------------------------------------------------------------
 
 
-def _int_field(body: dict, name: str, default: int) -> int:
-    value = body.get(name)
-    if value is None:
-        return default
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-        raise OverrideError(f"{name} must be a number, got {value!r}")
-    return int(value)
+def _coerce(value: Any, cast: Any, what: str) -> Any:
+    """``cast(value)``, with every failure (wrong type, non-numeric string,
+    overflow, NaN or infinity) raised as a 400 rather than a 500."""
+    try:
+        out = cast(value)
+    except (TypeError, ValueError, OverflowError):
+        raise OverrideError(f"{what} must be a number, got {value!r}")
+    if isinstance(out, float) and not math.isfinite(out):
+        raise OverrideError(f"{what} must be finite, got {value!r}")
+    return out
 
 
 class EngineService:
@@ -729,7 +745,14 @@ class EngineService:
             if hit is not None:
                 return hit, False
             out = self.compiled.path_for(key)
-            tree.compile_locked(self.bin, overrides, out)
+            # Compile beside the final path and rename into place, so a run
+            # never opens a half-written artifact.
+            tmp = out.with_name(f"{out.name}.{threading.get_ident()}.tmp")
+            try:
+                tree.compile_locked(self.bin, overrides, tmp)
+                os.replace(tmp, out)
+            finally:
+                tmp.unlink(missing_ok=True)
             self.compiled.put(key, out)
             return out, True
 
@@ -743,7 +766,8 @@ class EngineService:
         except EngineError:
             if artifact.exists():
                 raise
-            # Evicted between lookup and spawn: compile again, retry once.
+            # Evicted between lookup and spawn: the lookup below finds the
+            # entry gone (or heals it) and compiles again. Retry once.
             artifact, fresh = self.compiled_artifact(slug, overrides)
             result = self.run_compiled(artifact, request_json)
         log.info(
@@ -795,26 +819,27 @@ class EngineService:
         household = body.get("household") or {}
         if not isinstance(household, dict):
             raise OverrideError("household must be an object")
-        size = household.get("household_size")
-        if size is not None and (
-            isinstance(size, bool)
-            or not isinstance(size, (int, float))
-            or not 1 <= size <= MAX_HOUSEHOLD_SIZE
-        ):
-            raise OverrideError(f"household_size must be 1–{MAX_HOUSEHOLD_SIZE}, got {size!r}")
-        earnings_min = _int_field(body, "earnings_min", 0)
-        earnings_max = _int_field(body, "earnings_max", 4000)
-        earnings_step = _int_field(body, "earnings_step", 100)
-        threshold = body.get("cliff_mtr_threshold")
-        cliff_threshold = 1.0 if threshold is None else float(threshold)
+        # Same defaulting as the pre-fix service (a falsy value means the
+        # default), so direct API callers see unchanged results; what's new
+        # is that bad values answer 400 and the work is bounded.
+        size = max(1, _coerce(household.get("household_size") or 1, int, "household_size"))
+        if size > MAX_HOUSEHOLD_SIZE:
+            raise OverrideError(f"household_size must be at most {MAX_HOUSEHOLD_SIZE}, got {size}")
+        earnings_min = _coerce(body.get("earnings_min") or 0, int, "earnings_min")
+        earnings_max = _coerce(body.get("earnings_max") or 4000, int, "earnings_max")
+        earnings_step = _coerce(body.get("earnings_step") or 100, int, "earnings_step")
+        cliff_threshold = _coerce(body.get("cliff_mtr_threshold") or 1.0, float, "cliff_mtr_threshold")
         if earnings_step < 1:
             raise OverrideError("earnings_step must be >= 1")
-        # Check the length before materializing: len(range) is O(1).
+        # Check the length before materializing: len(range) is O(1), but
+        # raises OverflowError past sys.maxsize.
         points_range = range(earnings_min, earnings_max + 1, earnings_step)
-        if not 1 <= len(points_range) <= MAX_SWEEP_POINTS:
-            raise OverrideError(
-                f"the sweep must have 1–{MAX_SWEEP_POINTS} points, got {len(points_range)}"
-            )
+        try:
+            n_points = len(points_range)
+        except OverflowError:
+            n_points = MAX_SWEEP_POINTS + 1
+        if n_points > MAX_SWEEP_POINTS:
+            raise OverrideError(f"the sweep may have at most {MAX_SWEEP_POINTS} points")
         earnings_points = list(points_range)
 
         # Cache on the thin-payload shape so two clients with identical
@@ -832,9 +857,12 @@ class EngineService:
         if hit is not None:
             return hit
 
-        engine_request, _period = build_sweep_request(
-            self.program_config[program], self.bases[program], household, earnings_points
-        )
+        try:
+            engine_request, _period = build_sweep_request(
+                self.program_config[program], self.bases[program], household, earnings_points
+            )
+        except (TypeError, ValueError, OverflowError) as err:
+            raise OverrideError(f"invalid household facts: {err}")
         start = time.monotonic()
         engine_response = self.execute(program, overrides, engine_request)
         result = make_sweep_result(
