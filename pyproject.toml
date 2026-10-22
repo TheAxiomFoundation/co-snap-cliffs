@@ -1,0 +1,26 @@
+# Python side of the repo: the Modal engine service (engine_service.py,
+# modal_app.py) and its tests. The Next.js app is managed by bun.
+[project]
+name = "co-snap-cliffs-engine"
+version = "0.3.0"
+requires-python = ">=3.12"
+# Keep in step with the pip_install list in modal_app.py.
+dependencies = [
+    "fastapi>=0.109",
+    "pydantic>=2.0",
+    "ruamel.yaml>=0.18",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.27",
+    "hypothesis>=6.100",
+    "pytest>=8",
+    "uvicorn>=0.27",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

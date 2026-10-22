@@ -14,7 +14,7 @@
  * so MTR > 0 means SNAP fell as earnings rose; MTR ≥ 100% means SNAP fell by
  * more than the earnings increment (a true cliff: more earnings, less net).
  */
-import { runEngine } from "./engine/run";
+import { postEngine, runEngine } from "./engine/run";
 import {
   buildSweepRequest,
   DEFAULT_PROGRAM,
@@ -83,10 +83,9 @@ export async function runCliffSweep(opts: SweepOptions): Promise<SweepResult> {
   // both ends compared to assembling the request on Vercel.
   const ENGINE_URL = process.env.AXIOM_ENGINE_URL?.replace(/\/$/, "");
   if (ENGINE_URL) {
-    const r = await fetch(`${ENGINE_URL}/cliff-sweep`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const result = await postEngine<SweepResult>(
+      "/cliff-sweep",
+      {
         program: slug,
         household: opts.household,
         earnings_min: min,
@@ -94,10 +93,9 @@ export async function runCliffSweep(opts: SweepOptions): Promise<SweepResult> {
         earnings_step: step,
         cliff_mtr_threshold: threshold,
         overrides,
-      }),
-    });
-    if (!r.ok) throw new Error(`axiom-engine ${r.status}: ${(await r.text()).slice(0, 500)}`);
-    const result = (await r.json()) as SweepResult;
+      },
+      { baseUrl: ENGINE_URL },
+    );
     return { ...result, ms: Date.now() - start };
   }
 

@@ -25,6 +25,7 @@ import {
   type ProgramSlug,
 } from "@/lib/programs/registry";
 import type { SweepResult } from "@/lib/cliffs";
+import { createLatestGate, postWithRetry } from "@/lib/sweep-client";
 
 interface Household {
   household_size: number;
@@ -105,6 +106,10 @@ export default function Page() {
   const [err, setErr] = useState<string | null>(null);
   const baselineTimer = useRef<number | null>(null);
   const reformTimer = useRef<number | null>(null);
+  // Latest-wins gates: only the newest baseline / reform request may write
+  // its result (or error). Inputs changing supersedes everything in flight.
+  const baselineGate = useRef(createLatestGate()).current;
+  const reformGate = useRef(createLatestGate()).current;
   // Memoization: every successful sweep gets cached by its request signature.
   // Sliding back to a configuration you've already explored returns instantly
   // with no fetch. The cache survives the session; resetting state doesn't
@@ -157,18 +162,20 @@ export default function Page() {
     const inflight = inflightRef.current.get(key);
     if (inflight) return inflight;
     const promise = (async () => {
-      const r = await fetch("/gallery/cliffs/api/cliff-sweep", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          program,
-          household,
-          earnings_min: 0,
-          earnings_max: earningsMax,
-          earnings_step: step,
-          parameter_multipliers: multipliers,
+      const r = await postWithRetry(() =>
+        fetch("/gallery/cliffs/api/cliff-sweep", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            program,
+            household,
+            earnings_min: 0,
+            earnings_max: earningsMax,
+            earnings_step: step,
+            parameter_multipliers: multipliers,
+          }),
         }),
-      });
+      );
       if (!r.ok) throw new Error(`api ${r.status}: ${(await r.text()).slice(0, 200)}`);
       const result = (await r.json()) as SweepResult;
       cacheRef.current.set(key, result);
@@ -186,13 +193,16 @@ export default function Page() {
   // when reform multipliers move — so slider drags don't re-fire it.
   useEffect(() => {
     if (baselineTimer.current) window.clearTimeout(baselineTimer.current);
+    baselineGate.invalidate();
     baselineTimer.current = window.setTimeout(async () => {
+      const ticket = baselineGate.begin();
       startLoad();
       setErr(null);
       try {
-        setBaseline(await fetchSweep(DEFAULT_MULTIPLIERS()));
+        const result = await fetchSweep(DEFAULT_MULTIPLIERS());
+        if (baselineGate.isCurrent(ticket)) setBaseline(result);
       } catch (e) {
-        setErr((e as Error).message);
+        if (baselineGate.isCurrent(ticket)) setErr((e as Error).message);
       } finally {
         endLoad();
       }
@@ -204,17 +214,20 @@ export default function Page() {
   // refetches; only clicking Run does (via setAppliedMultipliers).
   useEffect(() => {
     if (reformTimer.current) window.clearTimeout(reformTimer.current);
+    reformGate.invalidate();
     if (!reformDirty) {
       setReform(null);
       return;
     }
     reformTimer.current = window.setTimeout(async () => {
+      const ticket = reformGate.begin();
       startLoad();
       setErr(null);
       try {
-        setReform(await fetchSweep(appliedMultipliers));
+        const result = await fetchSweep(appliedMultipliers);
+        if (reformGate.isCurrent(ticket)) setReform(result);
       } catch (e) {
-        setErr((e as Error).message);
+        if (reformGate.isCurrent(ticket)) setErr((e as Error).message);
       } finally {
         endLoad();
       }
@@ -229,14 +242,28 @@ export default function Page() {
     setErr(null);
     // Trigger both effects by jiggling refs; simpler is just to refetch
     // directly with the current values.
+    const baselineTicket = baselineGate.begin();
+    const reformTicket = reformGate.begin();
     (async () => {
       startLoad();
       try {
-        const b = await fetchSweep(DEFAULT_MULTIPLIERS());
-        setBaseline(b);
-        if (reformDirty) setReform(await fetchSweep(appliedMultipliers));
-      } catch (e) {
-        setErr((e as Error).message);
+        // Each step reports its own error only while its ticket is current,
+        // so a retry superseded by a newer request can't raise a stale banner.
+        try {
+          const b = await fetchSweep(DEFAULT_MULTIPLIERS());
+          if (baselineGate.isCurrent(baselineTicket)) setBaseline(b);
+        } catch (e) {
+          if (baselineGate.isCurrent(baselineTicket)) setErr((e as Error).message);
+          return;
+        }
+        if (reformDirty) {
+          try {
+            const r = await fetchSweep(appliedMultipliers);
+            if (reformGate.isCurrent(reformTicket)) setReform(r);
+          } catch (e) {
+            if (reformGate.isCurrent(reformTicket)) setErr((e as Error).message);
+          }
+        }
       } finally {
         endLoad();
       }

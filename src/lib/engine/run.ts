@@ -29,6 +29,47 @@ const ARTIFACTS_DIR =
 
 const ENGINE_URL = process.env.AXIOM_ENGINE_URL?.replace(/\/$/, "");
 
+/** Upstream budget for one engine call. The /api/cliff-sweep route may run
+ *  60 s; giving up at 50 s returns a clean 504 instead of letting Vercel kill
+ *  the function mid-request (FUNCTION_INVOCATION_TIMEOUT). */
+export const ENGINE_TIMEOUT_MS = 50_000;
+
+export class EngineTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`axiom-engine timed out after ${Math.round(ms / 1000)}s`);
+    this.name = "EngineTimeoutError";
+  }
+}
+
+/** POST JSON to the Modal engine service. Throws EngineTimeoutError when the
+ *  service has not answered within `timeoutMs`, and an Error carrying the
+ *  upstream status on a non-2xx response. */
+export async function postEngine<T>(
+  path: string,
+  body: unknown,
+  {
+    baseUrl = ENGINE_URL,
+    timeoutMs = ENGINE_TIMEOUT_MS,
+    fetchImpl = fetch,
+  }: { baseUrl?: string; timeoutMs?: number; fetchImpl?: typeof fetch } = {},
+): Promise<T> {
+  try {
+    const r = await fetchImpl(`${baseUrl}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!r.ok) {
+      throw new Error(`axiom-engine ${r.status}: ${(await r.text()).slice(0, 500)}`);
+    }
+    return (await r.json()) as T;
+  } catch (err) {
+    if ((err as Error).name === "TimeoutError") throw new EngineTimeoutError(timeoutMs);
+    throw err;
+  }
+}
+
 /** Single entry point. When `overrides` is empty, the prebuilt artifact is
  *  used; otherwise the engine compiles a patched program first. */
 export async function runEngine(
@@ -49,15 +90,7 @@ async function runViaHttp(
   request: ExecutionRequest,
   overrides: ParameterOverride[],
 ): Promise<ExecutionResponse> {
-  const r = await fetch(`${ENGINE_URL}/run`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ program: slug, request, overrides }),
-  });
-  if (!r.ok) {
-    throw new Error(`axiom-engine ${r.status}: ${(await r.text()).slice(0, 500)}`);
-  }
-  return (await r.json()) as ExecutionResponse;
+  return postEngine<ExecutionResponse>("/run", { program: slug, request, overrides });
 }
 
 let cachedBinaryOk: boolean | null = null;

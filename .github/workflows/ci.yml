@@ -16,7 +16,43 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Typecheck
         run: bun run typecheck
+      - name: Test
+        run: bun run test
       - name: Build
         # next build needs no secrets: the engine URL is only read at
         # request time by the dynamic /api/cliff-sweep route.
         run: bun run build
+
+  engine-service:
+    # The Modal engine service against a fake engine binary.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Test
+        run: uv run --frozen pytest -q tests/test_engine_service.py
+
+  engine-service-real:
+    # The same service against the pinned axiom-rules-engine and rulespec
+    # trees the Modal image bakes in (engine_pins.py).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: astral-sh/setup-uv@v6
+      - name: Engine pin
+        id: pin
+        run: echo "sha=$(python3 -c 'import engine_pins; print(engine_pins.AXIOM_RULES_ENGINE_SHA)')" >> "$GITHUB_OUTPUT"
+      - name: Cache engine binary
+        uses: actions/cache@v4
+        with:
+          path: .service-fixture/bin
+          key: axiom-rules-engine-${{ runner.os }}-${{ steps.pin.outputs.sha }}
+      - name: Build fixture
+        run: python3 scripts/setup-service-fixture.py .service-fixture
+      - name: Program bases
+        run: bun install --frozen-lockfile && bun run scripts/dump-program-bases.ts
+      - name: Test
+        env:
+          CO_SNAP_SERVICE_FIXTURE: .service-fixture
+        run: uv run --frozen pytest -q tests/test_engine_service_real.py

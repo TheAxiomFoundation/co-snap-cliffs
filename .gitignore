@@ -9,12 +9,16 @@ out/
 # Engine clones + build artifacts (bootstrapped by scripts/setup-engine.sh).
 # Whole `engine/` subtree is generated — checkouts, build outputs, compiled
 # artifacts, and the dev symlinks all live there.
-engine/
+/engine/
 
 # Python
 __pycache__/
 *.pyc
 .venv/
+.hypothesis/
+.pytest_cache/
+# Real-engine test fixture (scripts/setup-service-fixture.py).
+.service-fixture/
 
 # OS
 .DS_Store

@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { runCliffSweep } from "@/lib/cliffs";
+import { EngineTimeoutError } from "@/lib/engine/run";
 import { buildOverrides } from "@/lib/parameters";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// 60 s headroom for cold-start Modal hits. Trumps vercel.json on Vercel.
+// 60 s headroom for cold-start Modal hits; postEngine gives up at 50 s so
+// the route answers before the platform kills it. Trumps vercel.json.
 export const maxDuration = 60;
 
 // Fire-and-forget warmup on serverless cold start. Modal scales down after
@@ -62,9 +64,10 @@ export async function POST(req: Request): Promise<Response> {
     });
     return NextResponse.json(result);
   } catch (err) {
+    const timedOut = err instanceof EngineTimeoutError;
     return NextResponse.json(
-      { error: "compute failed", detail: (err as Error).message },
-      { status: 500 },
+      { error: timedOut ? "engine timeout" : "compute failed", detail: (err as Error).message },
+      { status: timedOut ? 504 : 500 },
     );
   }
 }
