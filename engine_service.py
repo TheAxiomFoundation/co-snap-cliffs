@@ -426,6 +426,18 @@ def _finite_number(value: Any, what: str) -> float:
     return number
 
 
+def _scaled(value: Any, m: float, rule: dict[str, Any]) -> float:
+    """``value * m``, refusing a product that is non-numeric or overflows
+    (a finite multiplier like 1e308 can still overflow the product)."""
+    try:
+        out = value * m
+    except TypeError:
+        raise OverrideError(f"parameter {rule.get('name')} has a non-numeric value {value!r}")
+    if not isinstance(out, (int, float)) or not math.isfinite(out):
+        raise OverrideError(f"multiplier {m!r} overflows parameter {rule.get('name')}")
+    return out
+
+
 def apply_patch(rule: dict[str, Any], patch: Any) -> None:
     """Apply one override patch to a parameter rule's version-0 entry."""
     if not isinstance(patch, dict):
@@ -441,7 +453,7 @@ def apply_patch(rule: dict[str, Any], patch: Any) -> None:
             raise OverrideError(f"parameter {rule.get('name')} has no values to scale")
         m = _finite_number(patch.get("multiplier"), "multiplier")
         for k in list(values.keys()):
-            values[k] = round(values[k] * m)
+            values[k] = round(_scaled(values[k], m, rule))
     elif kind == "set_values":
         new_values = patch.get("values")
         if not isinstance(new_values, dict):
@@ -462,7 +474,8 @@ def apply_patch(rule: dict[str, Any], patch: Any) -> None:
                 f"{rule.get('name')} = {formula!r}"
             )
         m = _finite_number(patch.get("multiplier"), "multiplier")
-        version["formula"] = f"{round(n * m * 100) / 100}"
+        # (n * m) * 100, in the original's evaluation order.
+        version["formula"] = f"{round(_scaled(_scaled(n, m, rule), 100, rule)) / 100}"
     elif kind == "set_formula":
         formula = patch.get("formula")
         if not isinstance(formula, str):

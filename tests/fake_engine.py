@@ -79,7 +79,7 @@ def run_compiled(artifact: Path) -> int:
         earnings = float(
             hh.get("snap_gross_monthly_earned_income", hh.get("employee_wages_received", 0))
         )
-        snap = max(0, round(table[min(max(size, 1), max(table))] - 0.3 * earnings * (1 - rate)))
+        snap = max(0, round(table[min(size, max(table))] - 0.3 * earnings * (1 - rate)))
         outputs = {}
         for output_id in query["outputs"]:
             if output_id.endswith("snap_regular_month_allotment"):

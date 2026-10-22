@@ -141,6 +141,20 @@ def test_override_compiles_once_and_household_edits_reuse_it(fake_layout, engine
     assert engine_log.read_text().split() == ["compile"] + ["run-compiled"] * 3
 
 
+def test_same_reform_compiles_separately_per_program(fake_layout):
+    """The compiled-artifact key includes the program: the same reform for
+    co-snap then ny-snap must compile each program's own tree."""
+    service = EngineService(fake_layout.config())
+    co, _ = service.compiled_artifact("co-snap", max_allotment(1.5))
+    ny, fresh = service.compiled_artifact("ny-snap", max_allotment(1.5))
+    assert fresh and co != ny
+    co_files = json.loads(co.read_text())["files"]
+    ny_files = json.loads(ny.read_text())["files"]
+    assert any(f.startswith("rulespec-us-co/") for f in co_files)
+    assert any(f.startswith("rulespec-us-ny/") for f in ny_files)
+    assert not any(f.startswith("rulespec-us-co/") for f in ny_files)
+
+
 def test_programs_patch_their_own_trees(fake_layout):
     service = EngineService(fake_layout.config())
     co = raw_run(service, max_allotment(2.0), program="co-snap")
@@ -243,6 +257,7 @@ def test_sweep_bounds_are_enforced(fake_layout):
         {"household": {"monthly_shelter_costs": "lots"}},
         {"household": {"monthly_shelter_costs": 10**400}},
         {"overrides": max_allotment(10**400)},
+        {"overrides": max_allotment(1e308)},  # finite, but the product overflows
         {"overrides": "max_allotment"},
         {"household": ["not", "an", "object"]},
     ],
@@ -267,8 +282,12 @@ def test_direct_callers_keep_the_old_defaulting(fake_layout):
     assert zeros["summary"] == default["summary"]
     empty = service.cliff_sweep({"program": "ny-snap", "earnings_min": 500, "earnings_max": 100})
     assert empty["points"] == []
-    for size in (0, "3", 3.0):
-        service.cliff_sweep({"program": "ny-snap", "household": {"household_size": size}})
+    # Coerced as before. (Size 0 also passes through to the engine unchanged,
+    # where the real engine rejects it, old and new alike; not asserted here.)
+    three = service.cliff_sweep({"program": "ny-snap", "household": {"household_size": 3}})
+    for size in ("3", 3.0):
+        same = service.cliff_sweep({"program": "ny-snap", "household": {"household_size": size}})
+        assert same["points"] == three["points"]
 
 
 # -- I2: failed compiles -----------------------------------------------------
